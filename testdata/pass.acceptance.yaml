@@ -18,3 +18,5 @@ cases:
               - "signet"
             notContains:
               - "panic"
+            matches:
+              - "^hello signet"
