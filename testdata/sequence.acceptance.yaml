@@ -1,0 +1,26 @@
+version: 1
+suite: sequence-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - name: command steps run in declared order
+    steps:
+      - name: first command
+        run:
+          args: ["first"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "first"
+      - name: second command
+        run:
+          args: ["second"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "second"
+

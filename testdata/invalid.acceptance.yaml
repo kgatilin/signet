@@ -1,0 +1,15 @@
+version: 1
+suite: invalid-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - name: invalid expect shape
+    steps:
+      - name: exit code has the wrong type
+        run:
+          args: ["hello"]
+        expect:
+          exitCode: "zero"
+

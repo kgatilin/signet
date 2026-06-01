@@ -1,0 +1,169 @@
+version: 1
+suite: signet-cli
+description: >
+  Self-acceptance contract for signet: validate a YAML contract, run its
+  command steps with optional confirmation, and report concise pass/fail checks.
+
+subject:
+  binary: ./bin/signet
+
+defaults:
+  timeout: 10s
+  confirm: true
+
+cases:
+  - name: help exposes the stable CLI surface
+    steps:
+      - name: root help
+        run:
+          args: ["--help"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "Usage:"
+              - "signet validate <file>"
+              - "signet run <file>"
+              - "--yes"
+              - "--binary"
+            notContains:
+              - "panic"
+              - "unknown command"
+          stderr:
+            notContains:
+              - "panic"
+
+  - name: validate accepts a well-formed contract
+    steps:
+      - name: validate passing fixture
+        run:
+          args: ["validate", "testdata/pass.acceptance.yaml"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "valid"
+              - "testdata/pass.acceptance.yaml"
+              - "1 case"
+              - "1 step"
+            notContains:
+              - "invalid"
+              - "failed"
+          stderr:
+            notContains:
+              - "panic"
+
+  - name: validate rejects malformed contracts with field paths
+    steps:
+      - name: validate invalid fixture
+        run:
+          args: ["validate", "testdata/invalid.acceptance.yaml"]
+        expect:
+          exitCode: 1
+          stdout:
+            contains:
+              - "invalid"
+              - "testdata/invalid.acceptance.yaml"
+              - "cases[0].steps[0].expect.exitCode"
+            notContains:
+              - "panic"
+
+  - name: run executes a passing contract without prompts when --yes is set
+    steps:
+      - name: run passing fixture
+        run:
+          args: ["run", "testdata/pass.acceptance.yaml", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "PASS"
+              - "testdata/pass.acceptance.yaml"
+              - "passing echo command"
+              - "1 case"
+              - "1 step"
+              - "0 failed"
+            notContains:
+              - "Confirm"
+              - "FAIL"
+              - "panic"
+
+  - name: run reports concise check failures
+    steps:
+      - name: run failing fixture
+        run:
+          args: ["run", "testdata/fail.acceptance.yaml", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 1
+          stdout:
+            contains:
+              - "FAIL"
+              - "testdata/fail.acceptance.yaml"
+              - "failing echo command"
+              - "stdout contains"
+              - "missing-token"
+              - "1 failed"
+            notContains:
+              - "panic"
+
+  - name: run keeps command order visible in the report
+    steps:
+      - name: run sequence fixture
+        run:
+          args: ["run", "testdata/sequence.acceptance.yaml", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "RUN first command"
+              - "PASS first command"
+              - "RUN second command"
+              - "PASS second command"
+            contains:
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - "FAIL"
+
+  - name: run asks for confirmation by default
+    steps:
+      - name: decline first prompt
+        run:
+          args: ["run", "testdata/pass.acceptance.yaml"]
+          stdin: "n\n"
+          timeout: 5s
+        expect:
+          exitCode: 130
+          stdout:
+            contains:
+              - "Confirm"
+              - "passing echo command"
+              - "aborted"
+              - "--yes"
+            notContains:
+              - "PASS passing echo command"
+              - "panic"
+
+  - name: binary override targets a different final binary
+    steps:
+      - name: override subject binary
+        run:
+          args:
+            - "run"
+            - "testdata/pass.acceptance.yaml"
+            - "--binary"
+            - "/bin/echo"
+            - "--yes"
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "PASS"
+              - "using binary /bin/echo"
+              - "0 failed"
+            notContains:
+              - "panic"

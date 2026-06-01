@@ -1,0 +1,17 @@
+version: 1
+suite: failing-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - name: failed output checks are reported compactly
+    steps:
+      - name: failing echo command
+        run:
+          args: ["hello", "signet"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "missing-token"

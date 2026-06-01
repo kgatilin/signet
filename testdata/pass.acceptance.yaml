@@ -1,0 +1,20 @@
+version: 1
+suite: passing-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - name: echo output can be checked by substring
+    steps:
+      - name: passing echo command
+        run:
+          args: ["hello", "signet"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "hello"
+              - "signet"
+            notContains:
+              - "panic"
