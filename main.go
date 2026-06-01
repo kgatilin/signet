@@ -35,6 +35,7 @@ func printHelp(w io.Writer) {
   signet validate <file>
   signet run <file> [--yes] [--binary <path>]
   signet discover groups <path>
+  signet discover <path>
   signet discover cases <file>
   signet discover cases <file> --checks
 

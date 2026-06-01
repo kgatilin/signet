@@ -17,6 +17,7 @@ contract before running it:
 
 ```bash
 signet discover groups <path>
+signet discover <path>
 signet discover cases <file>
 signet discover cases <file> --checks
 ```

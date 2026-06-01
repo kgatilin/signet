@@ -25,6 +25,7 @@ cases:
               - "signet validate <file>"
               - "signet run <file>"
               - "signet discover groups <path>"
+              - "signet discover <path>"
               - "signet discover cases <file>"
               - "signet discover cases <file> --checks"
               - "--yes"
@@ -68,6 +69,39 @@ cases:
               - "1 group"
             notContains:
               - "reporting-fixture"
+              - "panic"
+
+      - name: discover path defaults to groups
+        run:
+          args: ["discover", "testdata/discover"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "GROUP"
+              - "testdata/discover/cli.acceptance.yaml"
+              - "cli-fixture"
+              - "2 groups"
+            notContains:
+              - "invalid usage"
+              - "panic"
+
+      - name: discover continues after invalid groups
+        run:
+          args: ["discover", "groups", "testdata"]
+        expect:
+          exitCode: 1
+          stdout:
+            orderedContains:
+              - "testdata/fail.acceptance.yaml"
+              - "INVALID testdata/invalid.acceptance.yaml"
+              - "testdata/pass.acceptance.yaml"
+              - "testdata/sequence.acceptance.yaml"
+            contains:
+              - "cases[0].steps[0].expect.exitCode"
+              - "5 groups"
+              - "1 invalid"
+            notContains:
               - "panic"
 
   - name: discover lists test cases within a group

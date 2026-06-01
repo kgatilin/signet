@@ -11,9 +11,12 @@ import (
 )
 
 func discoverCmd(args []string, stdout io.Writer) int {
-	if len(args) < 2 {
+	if len(args) == 0 {
 		fmt.Fprintln(stdout, "invalid usage: signet discover groups <path> | signet discover cases <file> [--checks]")
 		return 2
+	}
+	if len(args) == 1 {
+		return discoverGroups(args[0], stdout)
 	}
 
 	switch args[0] {
@@ -56,16 +59,31 @@ func discoverGroups(path string, stdout io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintln(stdout, "GROUP FILE SUITE CASES STEPS")
+	fmt.Fprintln(stdout, "GROUP FILE SUITE CASES STEPS STATUS")
+	validGroups := 0
+	invalidGroups := 0
 	for _, file := range files {
 		spec, errs := loadSpec(file)
 		if len(errs) > 0 {
-			printInvalid(stdout, file, errs)
-			return 1
+			invalidGroups++
+			fmt.Fprintf(stdout, "INVALID %s\n", file)
+			for _, err := range errs {
+				if err.Path == "" {
+					fmt.Fprintf(stdout, "  - %s\n", err.Message)
+					continue
+				}
+				fmt.Fprintf(stdout, "  - %s %s\n", err.Path, err.Message)
+			}
+			continue
 		}
-		fmt.Fprintf(stdout, "GROUP %s %s %s %s\n", file, spec.Suite, plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"))
+		validGroups++
+		fmt.Fprintf(stdout, "GROUP %s %s %s %s valid\n", file, spec.Suite, plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"))
 	}
-	fmt.Fprintln(stdout, plural(len(files), "group"))
+	if invalidGroups > 0 {
+		fmt.Fprintf(stdout, "%s, %s\n", plural(validGroups, "group"), plural(invalidGroups, "invalid"))
+		return 1
+	}
+	fmt.Fprintln(stdout, plural(validGroups, "group"))
 	return 0
 }
 
