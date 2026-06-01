@@ -49,26 +49,26 @@ func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 		binary = opts.binaryOverride
 	}
 	if binary == "" && needsBinary(spec) {
-		fmt.Fprintln(stdout, "invalid subject.binary: required for steps using run.args")
+		fmt.Fprintf(stdout, "%s subject.binary: required for steps using run.args\n", red("invalid"))
 		return 1
 	}
 
 	if binary == "" {
-		fmt.Fprintln(stdout, "using shell commands")
+		fmt.Fprintf(stdout, "%s shell commands\n", dim("using"))
 	} else {
-		fmt.Fprintf(stdout, "using binary %s\n", binary)
+		fmt.Fprintf(stdout, "%s binary %s\n", dim("using"), binary)
 	}
 	totalSteps := countSteps(spec)
 	failedSteps := 0
 	confirmReader := bufio.NewReader(stdin)
 
 	for _, c := range spec.Cases {
-		fmt.Fprintf(stdout, "CASE %s\n", c.Name)
+		fmt.Fprintf(stdout, "%s %s\n", cyan("CASE"), c.Name)
 		for _, step := range c.Steps {
-			fmt.Fprintf(stdout, "RUN %s\n", step.Name)
+			fmt.Fprintf(stdout, "%s %s\n", cyan("RUN"), step.Name)
 			if shouldConfirm(spec, opts) {
 				if !confirmStep(confirmReader, stdout, step, binary) {
-					fmt.Fprintf(stdout, "aborted (use --yes to skip confirmation)\n")
+					fmt.Fprintf(stdout, "%s (use --yes to skip confirmation)\n", yellow("aborted"))
 					return 130
 				}
 			}
@@ -76,14 +76,14 @@ func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 			result := executeStep(step, spec, binary)
 			failures := evaluateStep(step, result)
 			if len(failures) == 0 {
-				fmt.Fprintf(stdout, "PASS %s\n", step.Name)
+				fmt.Fprintf(stdout, "%s %s\n", green("PASS"), step.Name)
 				continue
 			}
 
 			failedSteps++
-			fmt.Fprintf(stdout, "FAIL %s\n", step.Name)
+			fmt.Fprintf(stdout, "%s %s\n", red("FAIL"), step.Name)
 			for _, failure := range failures {
-				fmt.Fprintf(stdout, "  - %s: %s\n", failure.check, failure.message)
+				fmt.Fprintf(stdout, "  %s %s: %s\n", yellow("-"), failure.check, failure.message)
 			}
 			if result.err != nil {
 				fmt.Fprintf(stderr, "%s\n", result.err)
@@ -92,11 +92,11 @@ func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 	}
 
 	if failedSteps > 0 {
-		fmt.Fprintf(stdout, "FAIL %s: %s, %s, %d failed\n", opts.file, plural(len(spec.Cases), "case"), plural(totalSteps, "step"), failedSteps)
+		fmt.Fprintf(stdout, "%s %s: %s, %s, %s\n", red("FAIL"), opts.file, plural(len(spec.Cases), "case"), plural(totalSteps, "step"), red(fmt.Sprintf("%d failed", failedSteps)))
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "PASS %s: %s, %s, 0 failed\n", opts.file, plural(len(spec.Cases), "case"), plural(totalSteps, "step"))
+	fmt.Fprintf(stdout, "%s %s: %s, %s, 0 failed\n", green("PASS"), opts.file, plural(len(spec.Cases), "case"), plural(totalSteps, "step"))
 	return 0
 }
 
@@ -151,7 +151,7 @@ func needsBinary(spec *Spec) bool {
 }
 
 func confirmStep(reader *bufio.Reader, stdout io.Writer, step Step, binary string) bool {
-	fmt.Fprintf(stdout, "Confirm %s: %s %s [y/N] (use --yes to skip) ", step.Name, commandName(step, binary), strings.Join(commandArgs(step), " "))
+	fmt.Fprintf(stdout, "%s %s: %s %s %s ", yellow("Confirm"), step.Name, commandName(step, binary), strings.Join(commandArgs(step), " "), dim("[y/N] (use --yes to skip)"))
 	answer, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false

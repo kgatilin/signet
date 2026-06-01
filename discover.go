@@ -55,35 +55,35 @@ func discoverCmd(args []string, stdout io.Writer) int {
 func discoverGroups(path string, stdout io.Writer) int {
 	files, err := acceptanceFiles(path)
 	if err != nil {
-		fmt.Fprintf(stdout, "invalid %s:\n- %s\n", path, err)
+		fmt.Fprintf(stdout, "%s %s:\n%s %s\n", red("invalid"), path, yellow("-"), err)
 		return 1
 	}
 
-	fmt.Fprintln(stdout, "GROUP FILE SUITE CASES STEPS STATUS")
+	fmt.Fprintln(stdout, bold("GROUP FILE SUITE CASES STEPS STATUS"))
 	validGroups := 0
 	invalidGroups := 0
 	for _, file := range files {
 		spec, errs := loadSpec(file)
 		if len(errs) > 0 {
 			invalidGroups++
-			fmt.Fprintf(stdout, "INVALID %s\n", file)
+			fmt.Fprintf(stdout, "%s %s\n", red("INVALID"), file)
 			for _, err := range errs {
 				if err.Path == "" {
-					fmt.Fprintf(stdout, "  - %s\n", err.Message)
+					fmt.Fprintf(stdout, "  %s %s\n", yellow("-"), err.Message)
 					continue
 				}
-				fmt.Fprintf(stdout, "  - %s %s\n", err.Path, err.Message)
+				fmt.Fprintf(stdout, "  %s %s %s\n", yellow("-"), err.Path, err.Message)
 			}
 			continue
 		}
 		validGroups++
-		fmt.Fprintf(stdout, "GROUP %s %s %s %s valid\n", file, spec.Suite, plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"))
+		fmt.Fprintf(stdout, "%s %s %s %s %s %s\n", cyan("GROUP"), file, spec.Suite, plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"), green("valid"))
 	}
 	if invalidGroups > 0 {
-		fmt.Fprintf(stdout, "%s, %s\n", plural(validGroups, "group"), plural(invalidGroups, "invalid"))
+		fmt.Fprintf(stdout, "%s, %s\n", plural(validGroups, "group"), red(plural(invalidGroups, "invalid")))
 		return 1
 	}
-	fmt.Fprintln(stdout, plural(validGroups, "group"))
+	fmt.Fprintln(stdout, green(plural(validGroups, "group")))
 	return 0
 }
 
@@ -94,26 +94,26 @@ func discoverCases(file string, showChecks bool, stdout io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "GROUP %s %s\n", file, spec.Suite)
-	fmt.Fprintln(stdout, "CASE")
+	fmt.Fprintf(stdout, "%s %s %s\n", cyan("GROUP"), file, spec.Suite)
+	fmt.Fprintln(stdout, bold("CASE"))
 	for _, c := range spec.Cases {
-		fmt.Fprintf(stdout, "CASE %s (%s)\n", c.Name, plural(len(c.Steps), "step"))
+		fmt.Fprintf(stdout, "%s %s %s\n", cyan("CASE"), c.Name, dim("("+plural(len(c.Steps), "step")+")"))
 		if !showChecks {
 			continue
 		}
 		for _, step := range c.Steps {
-			fmt.Fprintf(stdout, "STEP %s\n", step.Name)
+			fmt.Fprintf(stdout, "%s %s\n", cyan("STEP"), step.Name)
 			for _, check := range describeChecks(step) {
-				fmt.Fprintf(stdout, "CHECK %s\n", check)
+				fmt.Fprintf(stdout, "%s %s\n", yellow("CHECK"), check)
 			}
 		}
 	}
 
 	if showChecks {
-		fmt.Fprintf(stdout, "%s, %s, %s\n", plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"), plural(countChecks(spec), "check"))
+		fmt.Fprintf(stdout, "%s, %s, %s\n", green(plural(len(spec.Cases), "case")), green(plural(countSteps(spec), "step")), green(plural(countChecks(spec), "check")))
 		return 0
 	}
-	fmt.Fprintf(stdout, "%s, %s\n", plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"))
+	fmt.Fprintf(stdout, "%s, %s\n", green(plural(len(spec.Cases), "case")), green(plural(countSteps(spec), "step")))
 	return 0
 }
 

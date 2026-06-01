@@ -35,3 +35,6 @@ expect:
   stderr:
     contains: [...]
 ```
+
+Color is enabled automatically on terminals. Set `NO_COLOR=1` to disable it, or
+`CLICOLOR_FORCE=1` to force color when output is not a terminal.

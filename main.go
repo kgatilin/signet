@@ -7,6 +7,7 @@ import (
 )
 
 func main() {
+	configureColor(os.Stdout)
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr, os.Stdin))
 }
 
@@ -62,17 +63,17 @@ func validateCmd(args []string, stdout io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "valid %s: %s, %s\n", args[0], plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"))
+	fmt.Fprintf(stdout, "%s %s: %s, %s\n", green("valid"), args[0], plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"))
 	return 0
 }
 
 func printInvalid(w io.Writer, path string, errs []validationError) {
-	fmt.Fprintf(w, "invalid %s:\n", path)
+	fmt.Fprintf(w, "%s %s:\n", red("invalid"), path)
 	for _, err := range errs {
 		if err.Path == "" {
-			fmt.Fprintf(w, "- %s\n", err.Message)
+			fmt.Fprintf(w, "%s %s\n", yellow("-"), err.Message)
 			continue
 		}
-		fmt.Fprintf(w, "- %s %s\n", err.Path, err.Message)
+		fmt.Fprintf(w, "%s %s %s\n", yellow("-"), err.Path, err.Message)
 	}
 }
