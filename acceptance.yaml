@@ -24,12 +24,93 @@ cases:
               - "Usage:"
               - "signet validate <file>"
               - "signet run <file>"
+              - "signet discover groups <path>"
+              - "signet discover cases <file>"
+              - "signet discover conditions <file>"
               - "--yes"
               - "--binary"
             notContains:
               - "panic"
               - "unknown command"
           stderr:
+            notContains:
+              - "panic"
+
+  - name: discover lists acceptance groups from a file or directory
+    steps:
+      - name: list groups in directory
+        run:
+          args: ["discover", "groups", "testdata/discover"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "GROUP"
+              - "testdata/discover/cli.acceptance.yaml"
+              - "cli-fixture"
+              - "testdata/discover/reporting.acceptance.yaml"
+              - "reporting-fixture"
+              - "2 groups"
+            notContains:
+              - "notes.txt"
+              - "panic"
+
+      - name: list one group from a file
+        run:
+          args: ["discover", "groups", "testdata/discover/cli.acceptance.yaml"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "GROUP"
+              - "testdata/discover/cli.acceptance.yaml"
+              - "cli-fixture"
+              - "1 group"
+            notContains:
+              - "reporting-fixture"
+              - "panic"
+
+  - name: discover lists test cases within a group
+    steps:
+      - name: list cases
+        run:
+          args: ["discover", "cases", "testdata/discover/cli.acceptance.yaml"]
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "CASE"
+              - "validate command accepts a valid file"
+              - "run command reports pass summary"
+            contains:
+              - "testdata/discover/cli.acceptance.yaml"
+              - "2 cases"
+              - "2 steps"
+            notContains:
+              - "reporting fixture"
+              - "panic"
+
+  - name: discover lists check conditions within a group
+    steps:
+      - name: list conditions
+        run:
+          args: ["discover", "conditions", "testdata/discover/cli.acceptance.yaml"]
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "validate command accepts a valid file"
+              - "exitCode == 0"
+              - "stdout contains \"valid\""
+              - "stdout notContains \"invalid\""
+              - "run command reports pass summary"
+              - "stdout contains \"PASS\""
+              - "stdout orderedContains \"RUN sample command\""
+              - "stdout orderedContains \"PASS sample command\""
+              - "stdout notContains \"FAIL\""
+            contains:
+              - "CONDITION"
+              - "8 conditions"
             notContains:
               - "panic"
 

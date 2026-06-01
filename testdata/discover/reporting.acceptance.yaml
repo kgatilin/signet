@@ -1,0 +1,18 @@
+version: 1
+suite: reporting-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - name: reporting fixture case
+    steps:
+      - name: report fixture
+        run:
+          args: ["reporting"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "reporting"
+

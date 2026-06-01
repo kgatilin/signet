@@ -1,0 +1,35 @@
+version: 1
+suite: cli-fixture
+
+subject:
+  binary: ./bin/signet
+
+cases:
+  - name: validate command accepts a valid file
+    steps:
+      - name: validate fixture
+        run:
+          args: ["validate", "testdata/pass.acceptance.yaml"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "valid"
+            notContains:
+              - "invalid"
+
+  - name: run command reports pass summary
+    steps:
+      - name: run fixture
+        run:
+          args: ["run", "testdata/pass.acceptance.yaml", "--yes"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "PASS"
+            orderedContains:
+              - "RUN sample command"
+              - "PASS sample command"
+            notContains:
+              - "FAIL"
