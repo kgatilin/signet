@@ -26,7 +26,7 @@ cases:
               - "signet run <file>"
               - "signet discover groups <path>"
               - "signet discover cases <file>"
-              - "signet discover conditions <file>"
+              - "signet discover cases <file> --checks"
               - "--yes"
               - "--binary"
             notContains:
@@ -90,27 +90,31 @@ cases:
               - "reporting fixture"
               - "panic"
 
-  - name: discover lists check conditions within a group
+  - name: discover can expand cases with their checks
     steps:
-      - name: list conditions
+      - name: list cases with checks
         run:
-          args: ["discover", "conditions", "testdata/discover/cli.acceptance.yaml"]
+          args: ["discover", "cases", "testdata/discover/cli.acceptance.yaml", "--checks"]
         expect:
           exitCode: 0
           stdout:
             orderedContains:
               - "validate command accepts a valid file"
+              - "validate fixture"
               - "exitCode == 0"
               - "stdout contains \"valid\""
               - "stdout notContains \"invalid\""
               - "run command reports pass summary"
+              - "run fixture"
               - "stdout contains \"PASS\""
               - "stdout orderedContains \"RUN sample command\""
               - "stdout orderedContains \"PASS sample command\""
               - "stdout notContains \"FAIL\""
             contains:
-              - "CONDITION"
-              - "8 conditions"
+              - "CHECK"
+              - "2 cases"
+              - "2 steps"
+              - "8 checks"
             notContains:
               - "panic"
 
