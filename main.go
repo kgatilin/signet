@@ -54,7 +54,7 @@ func newRootCommand(stdout, stderr io.Writer, stdin io.Reader) *cobra.Command {
 	root.AddCommand(
 		newValidateCommand(stdout),
 		newRunCommand(stdout, stderr, stdin),
-		newDiscoverCommand(stdout),
+		newCasesCommand(stdout),
 	)
 	return root
 }
@@ -107,44 +107,14 @@ func newRunCommand(stdout, stderr io.Writer, stdin io.Reader) *cobra.Command {
 	return cmd
 }
 
-func newDiscoverCommand(stdout io.Writer) *cobra.Command {
-	discover := &cobra.Command{
-		Use:   "discover <path>...",
-		Short: "List acceptance groups and cases without running commands.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				fmt.Fprintln(stdout, "invalid usage: signet discover groups <path>... | signet discover cases <path>... [--checks]")
-				return cliExitError{code: 2}
-			}
-			return exitCode(discoverGroups(args, stdout))
-		},
-	}
-	discover.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printDiscoverHelp(cmd.OutOrStdout())
-	})
-
-	groups := &cobra.Command{
-		Use:   "groups <path>...",
-		Short: "List acceptance files discovered under files or directories.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				fmt.Fprintln(stdout, "invalid usage: signet discover groups <path>...")
-				return cliExitError{code: 2}
-			}
-			return exitCode(discoverGroups(args, stdout))
-		},
-	}
-	groups.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printDiscoverGroupsHelp(cmd.OutOrStdout())
-	})
-
+func newCasesCommand(stdout io.Writer) *cobra.Command {
 	opts := discoverCaseOptions{}
 	cases := &cobra.Command{
 		Use:   "cases <path>...",
 		Short: "List cases under acceptance files or directories.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stdout, "invalid usage: signet discover cases <path>... [--case <id>|--id <id>] [--checks]")
+				fmt.Fprintln(stdout, "invalid usage: signet cases <path>... [--case <id>|--id <id>] [--checks]")
 				return cliExitError{code: 2}
 			}
 			return exitCode(discoverCases(args, opts, stdout))
@@ -154,11 +124,9 @@ func newDiscoverCommand(stdout io.Writer) *cobra.Command {
 	cases.Flags().StringVar(&opts.caseID, "case", "", "select one case id")
 	cases.Flags().StringVar(&opts.caseID, "id", "", "alias for --case")
 	cases.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		printDiscoverCasesHelp(cmd.OutOrStdout())
+		printCasesHelp(cmd.OutOrStdout())
 	})
-
-	discover.AddCommand(groups, cases)
-	return discover
+	return cases
 }
 
 func exitCode(code int) error {
@@ -172,16 +140,14 @@ func printHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   signet validate <path>...
   signet run <path>... [--yes] [--verbose] [--binary <path>]
-  signet discover groups <path>...
-  signet discover <path>...
-  signet discover cases <path>... [--case <id>|--id <id>]
-  signet discover cases <path>... [--case <id>|--id <id>] --checks
+  signet cases <path>... [--case <id>|--id <id>]
+  signet cases <path>... [--case <id>|--id <id>] --checks
   signet completion zsh
 
 Commands:
   validate     Validate acceptance YAML files.
   run          Run acceptance YAML files against their subject binaries.
-  discover     List acceptance groups and cases without running commands.
+  cases        List cases without running commands.
   completion   Generate shell completion scripts.
 
 Options:

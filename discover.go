@@ -10,69 +10,14 @@ import (
 	"strings"
 )
 
-func printDiscoverHelp(w io.Writer) {
+func printCasesHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  signet discover groups <path>...
-  signet discover <path>...
-  signet discover cases <path>... [--case <id>|--id <id>]
-  signet discover cases <path>... [--case <id>|--id <id>] --checks
-
-List acceptance groups and cases without running commands.
-`)
-}
-
-func printDiscoverGroupsHelp(w io.Writer) {
-	fmt.Fprint(w, `Usage:
-  signet discover groups <path>...
-  signet discover <path>...
-
-List acceptance files discovered under files or directories.
-`)
-}
-
-func printDiscoverCasesHelp(w io.Writer) {
-	fmt.Fprint(w, `Usage:
-  signet discover cases <path>... [--case <id>|--id <id>]
-  signet discover cases <path>... [--case <id>|--id <id>] --checks
+  signet cases <path>... [--case <id>|--id <id>]
+  signet cases <path>... [--case <id>|--id <id>] --checks
 
 List cases under acceptance files or directories. Use --checks to include
 expected checks. Use --case, or its --id alias, to select one case id.
 `)
-}
-
-func discoverGroups(paths []string, stdout io.Writer) int {
-	files, err := acceptanceFilesForPaths(paths)
-	if err != nil {
-		fmt.Fprintf(stdout, "%s %s:\n%s %s\n", red("invalid"), pathListLabel(paths), yellow("-"), err)
-		return 1
-	}
-
-	fmt.Fprintln(stdout, bold("GROUP FILE SUITE CASES STEPS STATUS"))
-	validGroups := 0
-	invalidGroups := 0
-	for _, file := range files {
-		spec, errs := loadSpec(file)
-		if len(errs) > 0 {
-			invalidGroups++
-			fmt.Fprintf(stdout, "%s %s\n", red("INVALID"), file)
-			for _, err := range errs {
-				if err.Path == "" {
-					fmt.Fprintf(stdout, "  %s %s\n", yellow("-"), err.Message)
-					continue
-				}
-				fmt.Fprintf(stdout, "  %s %s %s\n", yellow("-"), err.Path, err.Message)
-			}
-			continue
-		}
-		validGroups++
-		fmt.Fprintf(stdout, "%s %s %s %s %s %s\n", cyan("GROUP"), file, spec.Suite, plural(len(spec.Cases), "case"), plural(countSteps(spec), "step"), green("valid"))
-	}
-	if invalidGroups > 0 {
-		fmt.Fprintf(stdout, "%s, %s\n", plural(validGroups, "group"), red(plural(invalidGroups, "invalid")))
-		return 1
-	}
-	fmt.Fprintln(stdout, green(plural(validGroups, "group")))
-	return 0
 }
 
 type discoverSummary struct {

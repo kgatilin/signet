@@ -25,36 +25,50 @@ cases:
               - "Usage:"
               - "signet validate <path>..."
               - "signet run <path>..."
-              - "signet discover groups <path>..."
-              - "signet discover <path>..."
-              - "signet discover cases <path>... [--case <id>|--id <id>]"
-              - "signet discover cases <path>... [--case <id>|--id <id>] --checks"
+              - "signet cases <path>... [--case <id>|--id <id>]"
+              - "signet cases <path>... [--case <id>|--id <id>] --checks"
               - "signet completion zsh"
               - "--yes"
               - "--verbose"
               - "--binary"
             notContains:
+              - "signet discover"
               - "panic"
               - "unknown command"
           stderr:
             notContains:
               - "panic"
 
-      - name: discover help
+      - name: cases help
         run:
-          args: ["discover", "--help"]
+          args: ["cases", "--help"]
         expect:
           exitCode: 0
           stdout:
             contains:
               - "Usage:"
-              - "signet discover groups <path>..."
-              - "signet discover <path>..."
-              - "signet discover cases <path>... [--case <id>|--id <id>]"
-              - "signet discover cases <path>... [--case <id>|--id <id>] --checks"
+              - "signet cases <path>... [--case <id>|--id <id>]"
+              - "signet cases <path>... [--case <id>|--id <id>] --checks"
             notContains:
+              - "signet discover"
               - "invalid --help"
               - "stat --help"
+              - "panic"
+
+      - name: discover command is removed
+        run:
+          args: ["discover"]
+        expect:
+          exitCode: 2
+          stdout:
+            notContains:
+              - "Usage:"
+              - "signet discover"
+              - "panic"
+          stderr:
+            contains:
+              - "unknown command \"discover\""
+            notContains:
               - "panic"
 
       - name: zsh completion
@@ -88,98 +102,12 @@ cases:
               - "stat --help"
               - "panic"
 
-  - id: discover-groups
-    name: discover lists acceptance groups from a file or directory
-    steps:
-      - name: list groups in directory
-        run:
-          args: ["discover", "groups", "testdata/discover"]
-        expect:
-          exitCode: 0
-          stdout:
-            contains:
-              - "GROUP"
-              - "testdata/discover/cli.acceptance.yaml"
-              - "cli-fixture"
-              - "testdata/discover/reporting.acceptance.yaml"
-              - "reporting-fixture"
-              - "2 groups"
-            notContains:
-              - "notes.txt"
-              - "panic"
-
-      - name: list one group from a file
-        run:
-          args: ["discover", "groups", "testdata/discover/cli.acceptance.yaml"]
-        expect:
-          exitCode: 0
-          stdout:
-            contains:
-              - "GROUP"
-              - "testdata/discover/cli.acceptance.yaml"
-              - "cli-fixture"
-              - "1 group"
-            notContains:
-              - "reporting-fixture"
-              - "panic"
-
-      - name: discover path defaults to groups
-        run:
-          args: ["discover", "testdata/discover"]
-        expect:
-          exitCode: 0
-          stdout:
-            contains:
-              - "GROUP"
-              - "testdata/discover/cli.acceptance.yaml"
-              - "cli-fixture"
-              - "2 groups"
-            notContains:
-              - "invalid usage"
-              - "panic"
-
-      - name: discover expanded paths defaults to groups
-        run:
-          args:
-            - "discover"
-            - "testdata/run/alpha.acceptance.yaml"
-            - "testdata/run/nested"
-        expect:
-          exitCode: 0
-          stdout:
-            orderedContains:
-              - "GROUP testdata/run/alpha.acceptance.yaml"
-              - "GROUP testdata/run/nested/beta.acceptance.yaml"
-            contains:
-              - "2 groups"
-            notContains:
-              - "unknown discover target"
-              - "panic"
-
-      - name: discover continues after invalid groups
-        run:
-          args: ["discover", "groups", "testdata"]
-        expect:
-          exitCode: 1
-          stdout:
-            orderedContains:
-              - "testdata/fail.acceptance.yaml"
-              - "INVALID testdata/invalid.acceptance.yaml"
-              - "testdata/pass.acceptance.yaml"
-              - "testdata/sequence.acceptance.yaml"
-            contains:
-              - "cases[0].steps[0].expect.exitCode"
-              - "8 groups"
-              - "2 invalids"
-            notContains:
-              - "panic"
-
-  - id: discover-cases
-    name: discover lists test cases within a group
+  - id: cases-list
+    name: cases lists test cases within a group
     steps:
       - name: list cases
         run:
-          args: ["discover", "cases", "testdata/discover/cli.acceptance.yaml"]
+          args: ["cases", "testdata/discover/cli.acceptance.yaml"]
         expect:
           exitCode: 0
           stdout:
@@ -198,7 +126,7 @@ cases:
 
       - name: list cases under a directory
         run:
-          args: ["discover", "cases", "testdata/run"]
+          args: ["cases", "testdata/run"]
         expect:
           exitCode: 0
           stdout:
@@ -218,7 +146,6 @@ cases:
       - name: list one case by id
         run:
           args:
-            - "discover"
             - "cases"
             - "testdata/discover/cli.acceptance.yaml"
             - "--case"
@@ -239,12 +166,12 @@ cases:
               - "validate fixture"
               - "panic"
 
-  - id: discover-checks
-    name: discover can expand cases with their checks
+  - id: cases-checks
+    name: cases can expand cases with their checks
     steps:
       - name: list cases with checks
         run:
-          args: ["discover", "cases", "testdata/discover/cli.acceptance.yaml", "--checks"]
+          args: ["cases", "testdata/discover/cli.acceptance.yaml", "--checks"]
         expect:
           exitCode: 0
           stdout:
@@ -274,7 +201,6 @@ cases:
       - name: list cases with checks from expanded paths
         run:
           args:
-            - "discover"
             - "cases"
             - "testdata/run/alpha.acceptance.yaml"
             - "testdata/run/nested"

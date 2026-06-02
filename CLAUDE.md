@@ -8,13 +8,11 @@
   existing helpers:
   - validation: `validateFiles`, `validateFile`
   - execution: `runAcceptance`, `runFile`
-  - discovery: `discoverGroups`, `discoverCases`
+  - case listing: `discoverCases`
 - The stable public shape is:
   - `signet validate <path>...`
   - `signet run <path>... [--yes] [--verbose] [--binary <path>]`
-  - `signet discover <path>...`
-  - `signet discover groups <path>...`
-  - `signet discover cases <path>... [--case <id>|--id <id>] [--checks]`
+  - `signet cases <path>... [--case <id>|--id <id>] [--checks]`
   - `signet completion zsh`
 
 ## Acceptance Contracts
@@ -23,7 +21,7 @@
   output contract change.
 - Case IDs are mandatory. Case rows should stay explicit:
   `CASE id=<id> name="<name>"`.
-- `discover cases` uses `CASES` as the section header so actual case rows are
+- `cases` uses `CASES` as the section header so actual case rows are
   visually distinct.
 - Specs are discovered recursively from `acceptance.yaml` and
   `*.acceptance.yaml`.
