@@ -14,7 +14,7 @@
   - `signet run <path>... [--yes] [--verbose] [--binary <path>]`
   - `signet discover <path>...`
   - `signet discover groups <path>...`
-  - `signet discover cases <path>... [--case <id>] [--id <id>] [--checks]`
+  - `signet discover cases <path>... [--case <id>|--id <id>] [--checks]`
   - `signet completion zsh`
 
 ## Acceptance Contracts
@@ -39,6 +39,5 @@
 ## Shell Completion
 
 - Cobra provides completion through `signet completion zsh`.
-- The user's `~/.zshrc` uses a lazy completion helper and includes `signet` in
-  the command list. Do not add a generated static completion file unless the
-  user asks for that style explicitly.
+- Do not add a generated static completion file unless the user asks for that
+  style explicitly.

@@ -144,7 +144,7 @@ func newDiscoverCommand(stdout io.Writer) *cobra.Command {
 		Short: "List cases under acceptance files or directories.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stdout, "invalid usage: signet discover cases <path>... [--case <id>] [--checks]")
+				fmt.Fprintln(stdout, "invalid usage: signet discover cases <path>... [--case <id>|--id <id>] [--checks]")
 				return cliExitError{code: 2}
 			}
 			return exitCode(discoverCases(args, opts, stdout))
@@ -174,8 +174,8 @@ func printHelp(w io.Writer) {
   signet run <path>... [--yes] [--verbose] [--binary <path>]
   signet discover groups <path>...
   signet discover <path>...
-  signet discover cases <path>... [--case <id>]
-  signet discover cases <path>... [--case <id>] --checks
+  signet discover cases <path>... [--case <id>|--id <id>]
+  signet discover cases <path>... [--case <id>|--id <id>] --checks
   signet completion zsh
 
 Commands:

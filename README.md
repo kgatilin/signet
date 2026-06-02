@@ -25,14 +25,18 @@ signet run docs/features/<branch>/acceptance --yes
 acceptance files or directories. Directories are searched recursively for
 `acceptance.yaml` and `*.acceptance.yaml`.
 
+`signet run` executes commands described by the acceptance file, including
+shell commands when `run.shell` is set. Review acceptance files before running
+them, and do not run untrusted contracts.
+
 The CLI also exposes discovery commands so users and agents can inspect a
 contract before running it:
 
 ```bash
 signet discover groups <path>...
 signet discover <path>...
-signet discover cases <path>... [--case <id>]
-signet discover cases <path>... [--case <id>] --checks
+signet discover cases <path>... [--case <id>|--id <id>]
+signet discover cases <path>... [--case <id>|--id <id>] --checks
 ```
 
 Use `signet run --verbose` to print each executed command, exit code, stdout,
@@ -69,3 +73,5 @@ expect:
 
 Color is enabled automatically on terminals. Set `NO_COLOR=1` to disable it, or
 `CLICOLOR_FORCE=1` to force color when output is not a terminal.
+
+Released under the MIT License.

@@ -14,8 +14,8 @@ func printDiscoverHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   signet discover groups <path>...
   signet discover <path>...
-  signet discover cases <path>... [--case <id>]
-  signet discover cases <path>... [--case <id>] --checks
+  signet discover cases <path>... [--case <id>|--id <id>]
+  signet discover cases <path>... [--case <id>|--id <id>] --checks
 
 List acceptance groups and cases without running commands.
 `)
@@ -32,8 +32,8 @@ List acceptance files discovered under files or directories.
 
 func printDiscoverCasesHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  signet discover cases <path>... [--case <id>]
-  signet discover cases <path>... [--case <id>] --checks
+  signet discover cases <path>... [--case <id>|--id <id>]
+  signet discover cases <path>... [--case <id>|--id <id>] --checks
 
 List cases under acceptance files or directories. Use --checks to include
 expected checks. Use --case, or its --id alias, to select one case id.
