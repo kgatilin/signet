@@ -10,63 +10,6 @@ import (
 	"strings"
 )
 
-func discoverCmd(args []string, stdout io.Writer) int {
-	if len(args) == 1 && isHelpArg(args[0]) {
-		printDiscoverHelp(stdout)
-		return 0
-	}
-	if len(args) == 0 {
-		fmt.Fprintln(stdout, "invalid usage: signet discover groups <path>... | signet discover cases <path>... [--checks]")
-		return 2
-	}
-	if len(args) == 1 {
-		return discoverGroups([]string{args[0]}, stdout)
-	}
-
-	switch args[0] {
-	case "groups":
-		if len(args) == 2 && isHelpArg(args[1]) {
-			printDiscoverGroupsHelp(stdout)
-			return 0
-		}
-		if len(args) < 2 {
-			fmt.Fprintln(stdout, "invalid usage: signet discover groups <path>...")
-			return 2
-		}
-		return discoverGroups(args[1:], stdout)
-	case "cases":
-		if len(args) == 2 && isHelpArg(args[1]) {
-			printDiscoverCasesHelp(stdout)
-			return 0
-		}
-		opts := discoverCaseOptions{}
-		var paths []string
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--checks":
-				opts.showChecks = true
-				continue
-			case "--case", "--id":
-				if i+1 >= len(args) {
-					fmt.Fprintf(stdout, "invalid usage: %s requires a value\n", args[i])
-					return 2
-				}
-				opts.caseID = args[i+1]
-				i++
-				continue
-			}
-			paths = append(paths, args[i])
-		}
-		if len(paths) == 0 {
-			fmt.Fprintln(stdout, "invalid usage: signet discover cases <path>... [--case <id>] [--checks]")
-			return 2
-		}
-		return discoverCases(paths, opts, stdout)
-	default:
-		return discoverGroups(args, stdout)
-	}
-}
-
 func printDiscoverHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   signet discover groups <path>...

@@ -41,16 +41,7 @@ type checkFailure struct {
 	message string
 }
 
-func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
-	if len(args) == 1 && isHelpArg(args[0]) {
-		printRunHelp(stdout)
-		return 0
-	}
-	opts, ok := parseRunArgs(args, stdout)
-	if !ok {
-		return 2
-	}
-
+func runAcceptance(opts runOptions, stdout, stderr io.Writer, stdin io.Reader) int {
 	files, err := acceptanceFilesForPaths(opts.paths)
 	if err != nil {
 		fmt.Fprintf(stdout, "%s %s\n", red("invalid"), err)
@@ -196,32 +187,6 @@ func printRunSummary(stdout io.Writer, target string, groups int, summary runSum
 
 	fmt.Fprintf(stdout, "%s %s: %s, %s, %s, 0 failed\n", green("PASS"), target, plural(groups, "group"), plural(summary.cases, "case"), plural(summary.steps, "step"))
 	return 0
-}
-
-func parseRunArgs(args []string, stdout io.Writer) (runOptions, bool) {
-	var opts runOptions
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--yes":
-			opts.yes = true
-		case "--verbose", "-v":
-			opts.verbose = true
-		case "--binary":
-			if i+1 >= len(args) {
-				fmt.Fprintln(stdout, "invalid usage: --binary requires a value")
-				return opts, false
-			}
-			opts.binaryOverride = args[i+1]
-			i++
-		default:
-			opts.paths = append(opts.paths, args[i])
-		}
-	}
-	if len(opts.paths) == 0 {
-		fmt.Fprintln(stdout, "invalid usage: signet run <path>... [--yes] [--verbose] [--binary <path>]")
-		return opts, false
-	}
-	return opts, true
 }
 
 func printStepTrace(stdout io.Writer, step Step, binary string, result commandResult) {

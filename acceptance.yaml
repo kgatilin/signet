@@ -29,6 +29,7 @@ cases:
               - "signet discover <path>..."
               - "signet discover cases <path>... [--case <id>]"
               - "signet discover cases <path>... [--case <id>] --checks"
+              - "signet completion zsh"
               - "--yes"
               - "--verbose"
               - "--binary"
@@ -54,6 +55,20 @@ cases:
             notContains:
               - "invalid --help"
               - "stat --help"
+              - "panic"
+
+      - name: zsh completion
+        run:
+          args: ["completion", "zsh"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "#compdef signet"
+              - "compdef _signet signet"
+              - "_signet()"
+            notContains:
+              - "unknown command"
               - "panic"
 
       - name: run help
