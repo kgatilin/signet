@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ type Defaults struct {
 }
 
 type Case struct {
+	ID    string `yaml:"id"`
 	Name  string `yaml:"name"`
 	Steps []Step `yaml:"steps"`
 }
@@ -144,7 +146,19 @@ func validateSpec(spec *Spec) []validationError {
 		errs = append(errs, validationError{Path: "cases", Message: "must contain at least one case"})
 	}
 
+	caseIDs := map[string]int{}
 	for caseIndex, c := range spec.Cases {
+		if strings.TrimSpace(c.ID) == "" {
+			errs = append(errs, validationError{Path: fmt.Sprintf("cases[%d].id", caseIndex), Message: "is required"})
+		} else if !isCaseID(c.ID) {
+			errs = append(errs, validationError{Path: fmt.Sprintf("cases[%d].id", caseIndex), Message: "must use letters, numbers, dot, dash, or underscore"})
+		}
+		if c.ID != "" {
+			if previous, ok := caseIDs[c.ID]; ok {
+				errs = append(errs, validationError{Path: fmt.Sprintf("cases[%d].id", caseIndex), Message: fmt.Sprintf("must be unique, already used by cases[%d]", previous)})
+			}
+			caseIDs[c.ID] = caseIndex
+		}
 		if strings.TrimSpace(c.Name) == "" {
 			errs = append(errs, validationError{Path: fmt.Sprintf("cases[%d].name", caseIndex), Message: "is required"})
 		}
@@ -177,6 +191,12 @@ func validateSpec(spec *Spec) []validationError {
 	}
 
 	return errs
+}
+
+var caseIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+func isCaseID(id string) bool {
+	return caseIDPattern.MatchString(id)
 }
 
 func mapLookup(node *yaml.Node, key string) *yaml.Node {

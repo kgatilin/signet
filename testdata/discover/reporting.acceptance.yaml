@@ -5,7 +5,8 @@ subject:
   binary: /bin/echo
 
 cases:
-  - name: reporting fixture case
+  - id: reporting-fixture
+    name: reporting fixture case
     steps:
       - name: report fixture
         run:
@@ -15,4 +16,3 @@ cases:
           stdout:
             contains:
               - "reporting"
-

@@ -1,0 +1,14 @@
+version: 1
+suite: missing-id-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - name: missing case id
+    steps:
+      - name: echo
+        run:
+          args: ["hello"]
+        expect:
+          exitCode: 0

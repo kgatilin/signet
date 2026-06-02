@@ -5,7 +5,8 @@ subject:
   binary: /bin/echo
 
 cases:
-  - name: failed output checks are reported compactly
+  - id: failed-output-checks
+    name: failed output checks are reported compactly
     steps:
       - name: failing echo command
         run:

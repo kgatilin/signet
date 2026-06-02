@@ -5,7 +5,8 @@ subject:
   binary: ./bin/signet
 
 cases:
-  - name: validate command accepts a valid file
+  - id: validate-valid-file
+    name: validate command accepts a valid file
     steps:
       - name: validate fixture
         run:
@@ -18,7 +19,8 @@ cases:
             notContains:
               - "invalid"
 
-  - name: run command reports pass summary
+  - id: run-pass-summary
+    name: run command reports pass summary
     steps:
       - name: run fixture
         run:

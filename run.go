@@ -9,14 +9,23 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type runOptions struct {
-	file           string
+	paths          []string
 	yes            bool
+	verbose        bool
 	binaryOverride string
+}
+
+type runSummary struct {
+	cases         int
+	steps         int
+	failedSteps   int
+	invalidGroups int
 }
 
 type commandResult struct {
@@ -33,15 +42,70 @@ type checkFailure struct {
 }
 
 func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
+	if len(args) == 1 && isHelpArg(args[0]) {
+		printRunHelp(stdout)
+		return 0
+	}
 	opts, ok := parseRunArgs(args, stdout)
 	if !ok {
 		return 2
 	}
 
-	spec, errs := loadSpec(opts.file)
-	if len(errs) > 0 {
-		printInvalid(stdout, opts.file, errs)
+	files, err := acceptanceFilesForPaths(opts.paths)
+	if err != nil {
+		fmt.Fprintf(stdout, "%s %s\n", red("invalid"), err)
 		return 1
+	}
+
+	multiple := len(files) > 1
+	total := runSummary{}
+	confirmReader := bufio.NewReader(stdin)
+
+	for fileIndex, file := range files {
+		if multiple && fileIndex > 0 {
+			fmt.Fprintln(stdout)
+		}
+		if multiple {
+			fmt.Fprintf(stdout, "%s %s\n", cyan("GROUP"), file)
+		}
+		summary, code := runFile(file, opts, stdout, stderr, confirmReader)
+		total.add(summary)
+		if code == 130 {
+			return code
+		}
+		if !multiple {
+			return code
+		}
+	}
+
+	return printRunSummary(stdout, pathListLabel(opts.paths), len(files), total)
+}
+
+func printRunHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage:
+  signet run <path>... [--yes] [--verbose] [--binary <path>]
+
+Run acceptance YAML files against their subject binaries. Paths may be files or
+directories; directories are searched recursively for acceptance.yaml and
+*.acceptance.yaml.
+
+Options:
+  --yes            Run without per-command confirmation.
+  --verbose        Print executed command, exit code, stdout, and stderr.
+  --binary <path>  Override subject.binary for run.
+`)
+}
+
+func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmReader *bufio.Reader) (runSummary, int) {
+	spec, errs := loadSpec(file)
+	if len(errs) > 0 {
+		printInvalid(stdout, file, errs)
+		return runSummary{invalidGroups: 1}, 1
+	}
+
+	summary := runSummary{
+		cases: len(spec.Cases),
+		steps: countSteps(spec),
 	}
 
 	binary := spec.Subject.Binary
@@ -50,7 +114,8 @@ func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 	}
 	if binary == "" && needsBinary(spec) {
 		fmt.Fprintf(stdout, "%s subject.binary: required for steps using run.args\n", red("invalid"))
-		return 1
+		summary.invalidGroups = 1
+		return summary, 1
 	}
 
 	if binary == "" {
@@ -58,29 +123,32 @@ func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 	} else {
 		fmt.Fprintf(stdout, "%s binary %s\n", dim("using"), binary)
 	}
-	totalSteps := countSteps(spec)
-	failedSteps := 0
-	confirmReader := bufio.NewReader(stdin)
 
-	for _, c := range spec.Cases {
-		fmt.Fprintf(stdout, "%s %s\n", cyan("CASE"), c.Name)
+	for caseIndex, c := range spec.Cases {
+		if caseIndex > 0 {
+			printCaseSeparator(stdout)
+		}
+		fmt.Fprintf(stdout, "%s %s\n", cyan("CASE"), caseDisplay(c))
 		for _, step := range c.Steps {
 			fmt.Fprintf(stdout, "%s %s\n", cyan("RUN"), step.Name)
 			if shouldConfirm(spec, opts) {
 				if !confirmStep(confirmReader, stdout, step, binary) {
 					fmt.Fprintf(stdout, "%s (use --yes to skip confirmation)\n", yellow("aborted"))
-					return 130
+					return summary, 130
 				}
 			}
 
 			result := executeStep(step, spec, binary)
+			if opts.verbose {
+				printStepTrace(stdout, step, binary, result)
+			}
 			failures := evaluateStep(step, result)
 			if len(failures) == 0 {
 				fmt.Fprintf(stdout, "%s %s\n", green("PASS"), step.Name)
 				continue
 			}
 
-			failedSteps++
+			summary.failedSteps++
 			fmt.Fprintf(stdout, "%s %s\n", red("FAIL"), step.Name)
 			for _, failure := range failures {
 				fmt.Fprintf(stdout, "  %s %s: %s\n", yellow("-"), failure.check, failure.message)
@@ -91,12 +159,42 @@ func runCmd(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 		}
 	}
 
-	if failedSteps > 0 {
-		fmt.Fprintf(stdout, "%s %s: %s, %s, %s\n", red("FAIL"), opts.file, plural(len(spec.Cases), "case"), plural(totalSteps, "step"), red(fmt.Sprintf("%d failed", failedSteps)))
+	if summary.failedSteps > 0 {
+		fmt.Fprintf(stdout, "%s %s: %s, %s, %s\n", red("FAIL"), file, plural(summary.cases, "case"), plural(summary.steps, "step"), red(fmt.Sprintf("%d failed", summary.failedSteps)))
+		return summary, 1
+	}
+
+	fmt.Fprintf(stdout, "%s %s: %s, %s, 0 failed\n", green("PASS"), file, plural(summary.cases, "case"), plural(summary.steps, "step"))
+	return summary, 0
+}
+
+func printCaseSeparator(stdout io.Writer) {
+	fmt.Fprintln(stdout, "-----")
+}
+
+func (summary *runSummary) add(other runSummary) {
+	summary.cases += other.cases
+	summary.steps += other.steps
+	summary.failedSteps += other.failedSteps
+	summary.invalidGroups += other.invalidGroups
+}
+
+func printRunSummary(stdout io.Writer, target string, groups int, summary runSummary) int {
+	if summary.failedSteps > 0 || summary.invalidGroups > 0 {
+		parts := []string{
+			plural(groups, "group"),
+			plural(summary.cases, "case"),
+			plural(summary.steps, "step"),
+			red(fmt.Sprintf("%d failed", summary.failedSteps)),
+		}
+		if summary.invalidGroups > 0 {
+			parts = append(parts, red(plural(summary.invalidGroups, "invalid group")))
+		}
+		fmt.Fprintf(stdout, "%s %s: %s\n", red("FAIL"), target, strings.Join(parts, ", "))
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "%s %s: %s, %s, 0 failed\n", green("PASS"), opts.file, plural(len(spec.Cases), "case"), plural(totalSteps, "step"))
+	fmt.Fprintf(stdout, "%s %s: %s, %s, %s, 0 failed\n", green("PASS"), target, plural(groups, "group"), plural(summary.cases, "case"), plural(summary.steps, "step"))
 	return 0
 }
 
@@ -106,6 +204,8 @@ func parseRunArgs(args []string, stdout io.Writer) (runOptions, bool) {
 		switch args[i] {
 		case "--yes":
 			opts.yes = true
+		case "--verbose", "-v":
+			opts.verbose = true
 		case "--binary":
 			if i+1 >= len(args) {
 				fmt.Fprintln(stdout, "invalid usage: --binary requires a value")
@@ -114,19 +214,33 @@ func parseRunArgs(args []string, stdout io.Writer) (runOptions, bool) {
 			opts.binaryOverride = args[i+1]
 			i++
 		default:
-			if opts.file == "" {
-				opts.file = args[i]
-				continue
-			}
-			fmt.Fprintln(stdout, "invalid usage: signet run <file> [--yes] [--binary <path>]")
-			return opts, false
+			opts.paths = append(opts.paths, args[i])
 		}
 	}
-	if opts.file == "" {
-		fmt.Fprintln(stdout, "invalid usage: signet run <file> [--yes] [--binary <path>]")
+	if len(opts.paths) == 0 {
+		fmt.Fprintln(stdout, "invalid usage: signet run <path>... [--yes] [--verbose] [--binary <path>]")
 		return opts, false
 	}
 	return opts, true
+}
+
+func printStepTrace(stdout io.Writer, step Step, binary string, result commandResult) {
+	fmt.Fprintf(stdout, "%s %s\n", cyan("COMMAND"), formatCommand(step, binary))
+	fmt.Fprintf(stdout, "%s %d\n", cyan("EXIT"), result.exitCode)
+	printCapturedStream(stdout, "STDOUT", result.stdout)
+	printCapturedStream(stdout, "STDERR", result.stderr)
+}
+
+func printCapturedStream(stdout io.Writer, name, value string) {
+	if value == "" {
+		fmt.Fprintf(stdout, "%s %s\n", cyan(name), dim("(empty)"))
+		return
+	}
+	fmt.Fprintf(stdout, "%s\n", cyan(name))
+	fmt.Fprint(stdout, value)
+	if !strings.HasSuffix(value, "\n") {
+		fmt.Fprintln(stdout)
+	}
 }
 
 func shouldConfirm(spec *Spec, opts runOptions) bool {
@@ -151,7 +265,7 @@ func needsBinary(spec *Spec) bool {
 }
 
 func confirmStep(reader *bufio.Reader, stdout io.Writer, step Step, binary string) bool {
-	fmt.Fprintf(stdout, "%s %s: %s %s %s ", yellow("Confirm"), step.Name, commandName(step, binary), strings.Join(commandArgs(step), " "), dim("[y/N] (use --yes to skip)"))
+	fmt.Fprintf(stdout, "%s %s: %s %s ", yellow("Confirm"), step.Name, formatCommand(step, binary), dim("[y/N] (use --yes to skip)"))
 	answer, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false
@@ -160,9 +274,31 @@ func confirmStep(reader *bufio.Reader, stdout io.Writer, step Step, binary strin
 	return answer == "y" || answer == "yes"
 }
 
+func formatCommand(step Step, binary string) string {
+	parts := append([]string{commandName(step, binary)}, commandArgs(step)...)
+	formatted := make([]string, 0, len(parts))
+	for _, part := range parts {
+		formatted = append(formatted, quoteCommandPart(part))
+	}
+	return strings.Join(formatted, " ")
+}
+
+func quoteCommandPart(part string) string {
+	if part == "" {
+		return `""`
+	}
+	if strings.ContainsAny(part, " \t\n\"'\\$`!*?[]{}();&|<>") {
+		return strconv.Quote(part)
+	}
+	return part
+}
+
 func commandName(step Step, binary string) string {
 	if step.Run.Shell != "" {
-		return "sh"
+		return "/bin/sh"
+	}
+	if binary == "" {
+		return "<subject.binary>"
 	}
 	return binary
 }

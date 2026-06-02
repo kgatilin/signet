@@ -1,0 +1,18 @@
+version: 1
+suite: run-beta-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - id: beta
+    name: beta fixture case
+    steps:
+      - name: beta fixture
+        run:
+          args: ["beta"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "beta"

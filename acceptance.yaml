@@ -12,7 +12,8 @@ defaults:
   confirm: true
 
 cases:
-  - name: help exposes the stable CLI surface
+  - id: help-surface
+    name: help exposes the stable CLI surface
     steps:
       - name: root help
         run:
@@ -22,13 +23,14 @@ cases:
           stdout:
             contains:
               - "Usage:"
-              - "signet validate <file>"
-              - "signet run <file>"
-              - "signet discover groups <path>"
-              - "signet discover <path>"
-              - "signet discover cases <file>"
-              - "signet discover cases <file> --checks"
+              - "signet validate <path>..."
+              - "signet run <path>..."
+              - "signet discover groups <path>..."
+              - "signet discover <path>..."
+              - "signet discover cases <path>... [--case <id>]"
+              - "signet discover cases <path>... [--case <id>] --checks"
               - "--yes"
+              - "--verbose"
               - "--binary"
             notContains:
               - "panic"
@@ -37,7 +39,42 @@ cases:
             notContains:
               - "panic"
 
-  - name: discover lists acceptance groups from a file or directory
+      - name: discover help
+        run:
+          args: ["discover", "--help"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "Usage:"
+              - "signet discover groups <path>..."
+              - "signet discover <path>..."
+              - "signet discover cases <path>... [--case <id>]"
+              - "signet discover cases <path>... [--case <id>] --checks"
+            notContains:
+              - "invalid --help"
+              - "stat --help"
+              - "panic"
+
+      - name: run help
+        run:
+          args: ["run", "--help"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "Usage:"
+              - "signet run <path>..."
+              - "--yes"
+              - "--verbose"
+              - "--binary"
+            notContains:
+              - "invalid --help"
+              - "stat --help"
+              - "panic"
+
+  - id: discover-groups
+    name: discover lists acceptance groups from a file or directory
     steps:
       - name: list groups in directory
         run:
@@ -86,6 +123,24 @@ cases:
               - "invalid usage"
               - "panic"
 
+      - name: discover expanded paths defaults to groups
+        run:
+          args:
+            - "discover"
+            - "testdata/run/alpha.acceptance.yaml"
+            - "testdata/run/nested"
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP testdata/run/alpha.acceptance.yaml"
+              - "GROUP testdata/run/nested/beta.acceptance.yaml"
+            contains:
+              - "2 groups"
+            notContains:
+              - "unknown discover target"
+              - "panic"
+
       - name: discover continues after invalid groups
         run:
           args: ["discover", "groups", "testdata"]
@@ -99,12 +154,13 @@ cases:
               - "testdata/sequence.acceptance.yaml"
             contains:
               - "cases[0].steps[0].expect.exitCode"
-              - "5 groups"
-              - "1 invalid"
+              - "8 groups"
+              - "2 invalids"
             notContains:
               - "panic"
 
-  - name: discover lists test cases within a group
+  - id: discover-cases
+    name: discover lists test cases within a group
     steps:
       - name: list cases
         run:
@@ -113,9 +169,10 @@ cases:
           exitCode: 0
           stdout:
             orderedContains:
-              - "CASE"
-              - "validate command accepts a valid file"
-              - "run command reports pass summary"
+              - "CASES"
+              - "id=validate-valid-file name=\"validate command accepts a valid file\""
+              - "-----"
+              - "id=run-pass-summary name=\"run command reports pass summary\""
             contains:
               - "testdata/discover/cli.acceptance.yaml"
               - "2 cases"
@@ -124,7 +181,51 @@ cases:
               - "reporting fixture"
               - "panic"
 
-  - name: discover can expand cases with their checks
+      - name: list cases under a directory
+        run:
+          args: ["discover", "cases", "testdata/run"]
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP testdata/run/alpha.acceptance.yaml"
+              - "id=alpha name=\"alpha fixture case\""
+              - "GROUP testdata/run/nested/beta.acceptance.yaml"
+              - "id=beta name=\"beta fixture case\""
+            contains:
+              - "2 groups"
+              - "2 cases"
+              - "2 steps"
+            notContains:
+              - "invalid"
+              - "panic"
+
+      - name: list one case by id
+        run:
+          args:
+            - "discover"
+            - "cases"
+            - "testdata/discover/cli.acceptance.yaml"
+            - "--case"
+            - "run-pass-summary"
+            - "--checks"
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "CASE id=run-pass-summary name=\"run command reports pass summary\""
+              - "STEP run fixture"
+              - "stdout contains \"PASS\""
+              - "1 case"
+              - "1 step"
+              - "5 checks"
+            notContains:
+              - "validate-valid-file"
+              - "validate fixture"
+              - "panic"
+
+  - id: discover-checks
+    name: discover can expand cases with their checks
     steps:
       - name: list cases with checks
         run:
@@ -133,13 +234,16 @@ cases:
           exitCode: 0
           stdout:
             orderedContains:
-              - "validate command accepts a valid file"
+              - "id=validate-valid-file name=\"validate command accepts a valid file\""
               - "validate fixture"
+              - "COMMAND ./bin/signet validate testdata/pass.acceptance.yaml"
               - "exitCode == 0"
               - "stdout contains \"valid\""
               - "stdout notContains \"invalid\""
-              - "run command reports pass summary"
+              - "-----"
+              - "id=run-pass-summary name=\"run command reports pass summary\""
               - "run fixture"
+              - "COMMAND ./bin/signet run testdata/pass.acceptance.yaml --yes"
               - "stdout contains \"PASS\""
               - "stdout orderedContains \"RUN sample command\""
               - "stdout orderedContains \"PASS sample command\""
@@ -152,7 +256,37 @@ cases:
             notContains:
               - "panic"
 
-  - name: validate accepts a well-formed contract
+      - name: list cases with checks from expanded paths
+        run:
+          args:
+            - "discover"
+            - "cases"
+            - "testdata/run/alpha.acceptance.yaml"
+            - "testdata/run/nested"
+            - "--checks"
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP testdata/run/alpha.acceptance.yaml"
+              - "alpha fixture"
+              - "COMMAND /bin/echo alpha"
+              - "stdout contains \"alpha\""
+              - "GROUP testdata/run/nested/beta.acceptance.yaml"
+              - "beta fixture"
+              - "COMMAND /bin/echo beta"
+              - "stdout contains \"beta\""
+            contains:
+              - "2 groups"
+              - "2 cases"
+              - "2 steps"
+              - "4 checks"
+            notContains:
+              - "invalid"
+              - "panic"
+
+  - id: validate-valid
+    name: validate accepts a well-formed contract
     steps:
       - name: validate passing fixture
         run:
@@ -172,7 +306,46 @@ cases:
             notContains:
               - "panic"
 
-  - name: validate rejects malformed contracts with field paths
+      - name: validate directory fixture
+        run:
+          args: ["validate", "testdata/run"]
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "valid testdata/run/alpha.acceptance.yaml"
+              - "valid testdata/run/nested/beta.acceptance.yaml"
+              - "valid testdata/run"
+            contains:
+              - "2 groups"
+              - "2 cases"
+              - "2 steps"
+            notContains:
+              - "invalid"
+              - "panic"
+
+      - name: validate expanded file and directory paths
+        run:
+          args:
+            - "validate"
+            - "testdata/run/alpha.acceptance.yaml"
+            - "testdata/run/nested"
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "valid testdata/run/alpha.acceptance.yaml"
+              - "valid testdata/run/nested/beta.acceptance.yaml"
+            contains:
+              - "2 groups"
+              - "2 cases"
+              - "2 steps"
+            notContains:
+              - "invalid"
+              - "panic"
+
+  - id: validate-invalid
+    name: validate rejects malformed contracts with field paths
     steps:
       - name: validate invalid fixture
         run:
@@ -187,7 +360,22 @@ cases:
             notContains:
               - "panic"
 
-  - name: run executes a passing contract without prompts when --yes is set
+      - name: validate missing case id
+        run:
+          args: ["validate", "testdata/missing-id.acceptance.yaml"]
+        expect:
+          exitCode: 1
+          stdout:
+            contains:
+              - "invalid"
+              - "testdata/missing-id.acceptance.yaml"
+              - "cases[0].id"
+              - "is required"
+            notContains:
+              - "panic"
+
+  - id: run-pass
+    name: run executes a passing contract without prompts when --yes is set
     steps:
       - name: run passing fixture
         run:
@@ -208,7 +396,105 @@ cases:
               - "FAIL"
               - "panic"
 
-  - name: run reports concise check failures
+      - name: run passing fixture with verbose output
+        run:
+          args: ["run", "testdata/pass.acceptance.yaml", "--yes", "--verbose"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "COMMAND /bin/echo hello signet"
+              - "EXIT 0"
+              - "STDOUT"
+              - "hello signet"
+              - "STDERR"
+              - "(empty)"
+              - "PASS passing echo command"
+            contains:
+              - "PASS"
+              - "0 failed"
+            notContains:
+              - "Confirm"
+              - "FAIL"
+              - "panic"
+
+      - name: run two cases with visible separator
+        run:
+          args: ["run", "testdata/two-cases.acceptance.yaml", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "CASE id=first-case name=\"first case\""
+              - "PASS first command"
+              - "-----"
+              - "CASE id=second-case name=\"second case\""
+              - "PASS second command"
+            contains:
+              - "2 cases"
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - "Confirm"
+              - "FAIL"
+              - "panic"
+
+  - id: run-directory
+    name: run executes acceptance contracts under a directory
+    steps:
+      - name: run directory fixture
+        run:
+          args: ["run", "testdata/run", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP testdata/run/alpha.acceptance.yaml"
+              - "PASS testdata/run/alpha.acceptance.yaml"
+              - "GROUP testdata/run/nested/beta.acceptance.yaml"
+              - "PASS testdata/run/nested/beta.acceptance.yaml"
+              - "PASS testdata/run"
+            contains:
+              - "2 groups"
+              - "2 cases"
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - "Confirm"
+              - "FAIL"
+              - "panic"
+
+      - name: run expanded file and directory paths
+        run:
+          args:
+            - "run"
+            - "testdata/run/alpha.acceptance.yaml"
+            - "testdata/run/nested"
+            - "--yes"
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP testdata/run/alpha.acceptance.yaml"
+              - "PASS testdata/run/alpha.acceptance.yaml"
+              - "GROUP testdata/run/nested/beta.acceptance.yaml"
+              - "PASS testdata/run/nested/beta.acceptance.yaml"
+            contains:
+              - "2 groups"
+              - "2 cases"
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - "Confirm"
+              - "FAIL"
+              - "panic"
+
+  - id: run-fail
+    name: run reports concise check failures
     steps:
       - name: run failing fixture
         run:
@@ -227,7 +513,8 @@ cases:
             notContains:
               - "panic"
 
-  - name: run keeps command order visible in the report
+  - id: run-order
+    name: run keeps command order visible in the report
     steps:
       - name: run sequence fixture
         run:
@@ -247,7 +534,8 @@ cases:
             notContains:
               - "FAIL"
 
-  - name: run asks for confirmation by default
+  - id: run-confirm
+    name: run asks for confirmation by default
     steps:
       - name: decline first prompt
         run:
@@ -266,7 +554,8 @@ cases:
               - "PASS passing echo command"
               - "panic"
 
-  - name: binary override targets a different final binary
+  - id: run-binary-override
+    name: binary override targets a different final binary
     steps:
       - name: override subject binary
         run:

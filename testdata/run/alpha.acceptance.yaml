@@ -1,0 +1,18 @@
+version: 1
+suite: run-alpha-fixture
+
+subject:
+  binary: /bin/echo
+
+cases:
+  - id: alpha
+    name: alpha fixture case
+    steps:
+      - name: alpha fixture
+        run:
+          args: ["alpha"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "alpha"

@@ -5,7 +5,8 @@ subject:
   binary: /bin/echo
 
 cases:
-  - name: echo output can be checked by substring
+  - id: echo-substrings
+    name: echo output can be checked by substring
     steps:
       - name: passing echo command
         run:

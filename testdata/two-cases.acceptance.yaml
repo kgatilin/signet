@@ -1,12 +1,12 @@
 version: 1
-suite: sequence-fixture
+suite: two-cases-fixture
 
 subject:
   binary: /bin/echo
 
 cases:
-  - id: command-order
-    name: command steps run in declared order
+  - id: first-case
+    name: first case
     steps:
       - name: first command
         run:
@@ -16,6 +16,10 @@ cases:
           stdout:
             contains:
               - "first"
+
+  - id: second-case
+    name: second case
+    steps:
       - name: second command
         run:
           args: ["second"]
