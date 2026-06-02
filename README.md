@@ -6,19 +6,18 @@ An acceptance contract describes the final CLI command shape and the output
 checks that prove it behaves as expected, without requiring a full e2e test
 framework.
 
-Acceptance specs use the same schema regardless of where they live. Recommended
-locations are `acceptance/core/<group>/*.acceptance.yaml` for core specs,
-`internal/plugins/<plugin>/acceptance/*.acceptance.yaml` for plugin-owned specs,
-and `docs/features/<branch>/acceptance/**` for feature-branch deliverables.
-`signet` discovers `acceptance.yaml` and `*.acceptance.yaml` recursively.
+Acceptance specs use the same schema regardless of where they live. A project
+can keep a single root `acceptance.yaml`, put specs under an `acceptance/`
+directory, or use any other layout that fits the repo. `signet` discovers
+`acceptance.yaml` and `*.acceptance.yaml` recursively.
 
 ```bash
 go build -o bin/signet .
 signet validate acceptance.yaml
-signet validate docs/features/<branch>/acceptance
+signet validate path/to/contracts
 signet run acceptance.yaml --yes
 signet run acceptance.yaml --yes --verbose
-signet run docs/features/<branch>/acceptance --yes
+signet run path/to/contracts --yes
 ```
 
 `signet validate`, `signet run`, and `signet discover` accept one or more
