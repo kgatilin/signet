@@ -1,0 +1,27 @@
+version: 1
+suite: no-build-fixture
+description: Fixture whose build fails, proving the build gate and --no-build skip.
+
+subject:
+  binary: /bin/echo
+
+setup:
+  build:
+    - "exit 7"
+
+defaults:
+  timeout: 5s
+  confirm: false
+
+cases:
+  - id: independent
+    name: case does not depend on the build
+    steps:
+      - name: standalone check
+        run:
+          shell: "echo standalone-ok"
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "standalone-ok"

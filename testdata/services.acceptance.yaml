@@ -1,0 +1,41 @@
+version: 1
+suite: services-fixture
+description: Fixture proving setup.services start before cases and stop after.
+
+subject:
+  binary: /bin/echo
+
+setup:
+  build:
+    - "echo ready-to-serve > ${tmp}/build.marker"
+  services:
+    - name: fileserver
+      shell: "echo listening; touch ${tmp}/server.up; sleep 30"
+      ready:
+        log: "listening"
+        timeout: 5s
+
+defaults:
+  timeout: 5s
+  confirm: false
+
+cases:
+  - id: service-up
+    name: case runs while the service is alive
+    steps:
+      - name: build marker present
+        run:
+          shell: "cat ${tmp}/build.marker"
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "ready-to-serve"
+      - name: service wrote its marker
+        run:
+          shell: "test -f ${tmp}/server.up && echo service-alive"
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "service-alive"

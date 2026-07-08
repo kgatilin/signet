@@ -91,7 +91,7 @@ func newRunCommand(stdout, stderr io.Writer, stdin io.Reader) *cobra.Command {
 		Short: "Run acceptance YAML files against their subject binaries.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stdout, "invalid usage: signet run <path>... [--yes] [--verbose] [--binary <path>]")
+				fmt.Fprintln(stdout, "invalid usage: signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]")
 				return cliExitError{code: 2}
 			}
 			opts.paths = args
@@ -100,6 +100,8 @@ func newRunCommand(stdout, stderr io.Writer, stdin io.Reader) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&opts.yes, "yes", false, "run without per-command confirmation")
 	cmd.Flags().BoolVarP(&opts.verbose, "verbose", "v", false, "print command traces")
+	cmd.Flags().BoolVar(&opts.keepTemp, "keep-temp", false, "keep setup temporary files after the run")
+	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "skip setup.build and use the existing binary")
 	cmd.Flags().StringVar(&opts.binaryOverride, "binary", "", "override subject.binary")
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		printRunHelp(cmd.OutOrStdout())
@@ -139,7 +141,7 @@ func exitCode(code int) error {
 func printHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   signet validate <path>...
-  signet run <path>... [--yes] [--verbose] [--binary <path>]
+  signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]
   signet cases <path>... [--case <id>|--id <id>]
   signet cases <path>... [--case <id>|--id <id>] --checks
   signet completion zsh
@@ -153,6 +155,8 @@ Commands:
 Options:
   --yes            Run without per-command confirmation.
   --verbose        Print executed command, exit code, stdout, and stderr.
+  --keep-temp      Keep setup temporary files after the run.
+  --no-build       Skip setup.build and use the existing binary.
   --binary <path>  Override subject.binary for run.
 `)
 }

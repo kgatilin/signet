@@ -11,9 +11,12 @@
   - case listing: `discoverCases`
 - The stable public shape is:
   - `signet validate <path>...`
-  - `signet run <path>... [--yes] [--verbose] [--binary <path>]`
+  - `signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]`
   - `signet cases <path>... [--case <id>|--id <id>] [--checks]`
   - `signet completion zsh`
+- Build/service lifecycle lives in `service.go`; process-group signals are in
+  `process_unix.go`/`process_other.go`. Keep `runFile` as the orchestrator that
+  calls `runBuild` then `startServices`/`stopServices` around the case loop.
 
 ## Acceptance Contracts
 
@@ -25,6 +28,26 @@
   visually distinct.
 - Specs are discovered recursively from `acceptance.yaml` and
   `*.acceptance.yaml`.
+- Acceptance command safety is explicit: `run.kind` defaults to `read`; mark
+  create/update/delete/deploy style steps as `write`. Write steps always require
+  interactive confirmation during `signet run`, even when `--yes` is passed or
+  `defaults.confirm: false` is set. `cases --checks` should make write steps
+  visible with `KIND write`.
+- `setup.files` creates per-acceptance-file temporary files. Keep variable
+  expansion limited to explicit setup variables. Canonical variables are
+  `${file.<name>}` and `${tmp}`; `${setup.files.<name>}` and `${setup.dir}` are
+  compatibility aliases only. `${binary}` (alias `${subject.binary}`) expands to
+  the resolved subject binary, honoring `--binary`.
+- `setup.build` (string or list) runs to completion before cases; a non-zero
+  exit fails the group. signet does not cache builds — incrementality is the
+  build tool's job. `--no-build` skips it.
+- `setup.services` are background processes started before cases and stopped
+  after (reverse order, `SIGTERM`→`SIGKILL` after `stopTimeout`). Teardown always
+  runs. Each service uses `args` (argv against `subject.binary`) or `shell`;
+  `ready.shell` (polled to exit 0) or `ready.log` (substring) gates case start.
+  `cases --checks` shows `BUILD`/`SERVICE`/`COMMAND`/`READY` so setup is visible.
+- Update `README.md` with every new public feature, CLI shape change, YAML
+  field, or output contract that users need to understand.
 
 ## Verification
 

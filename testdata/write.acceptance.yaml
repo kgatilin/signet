@@ -1,0 +1,24 @@
+version: 1
+suite: write-fixture
+description: Fixture proving write steps require explicit confirmation.
+
+subject:
+  binary: /bin/echo
+
+defaults:
+  timeout: 5s
+  confirm: false
+
+cases:
+  - id: write-command
+    name: write command requires confirmation
+    steps:
+      - name: create sample
+        run:
+          kind: write
+          args: ["created"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "created"

@@ -1,0 +1,38 @@
+version: 1
+suite: setup-env-fixture
+description: Fixture proving setup envFiles feed direct run.args commands.
+
+subject:
+  binary: /usr/bin/printenv
+
+setup:
+  envFiles:
+    - testdata/fixtures/setup.env
+  requireEnv:
+    - SIGNET_ACCEPTANCE_SETUP_ENV_REQUIRED
+
+defaults:
+  timeout: 5s
+  confirm: false
+
+cases:
+  - id: setup-env-file
+    name: setup envFiles feed direct commands
+    steps:
+      - name: print loaded env var
+        run:
+          args: ["SIGNET_ACCEPTANCE_SETUP_ENV_VALUE"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "from-dotenv"
+
+      - name: require loaded env var
+        run:
+          args: ["SIGNET_ACCEPTANCE_SETUP_ENV_REQUIRED"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "required-from-dotenv"

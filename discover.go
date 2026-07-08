@@ -95,6 +95,9 @@ func discoverCasesFile(file string, opts discoverCaseOptions, stdout io.Writer) 
 	}
 
 	fmt.Fprintf(stdout, "%s %s %s\n", cyan("GROUP"), file, spec.Suite)
+	if opts.showChecks {
+		printSetupChecks(stdout, spec)
+	}
 	fmt.Fprintln(stdout, bold("CASES"))
 	for caseIndex, c := range cases {
 		if caseIndex > 0 {
@@ -106,6 +109,9 @@ func discoverCasesFile(file string, opts discoverCaseOptions, stdout io.Writer) 
 		}
 		for _, step := range c.Steps {
 			fmt.Fprintf(stdout, "%s %s\n", cyan("STEP"), step.Name)
+			if step.Run.Kind != "" {
+				fmt.Fprintf(stdout, "%s %s\n", cyan("KIND"), step.Run.Kind)
+			}
 			fmt.Fprintf(stdout, "%s %s\n", cyan("COMMAND"), formatCommand(step, spec.Subject.Binary))
 			for _, check := range describeChecks(step) {
 				fmt.Fprintf(stdout, "%s %s\n", yellow("CHECK"), check)
@@ -119,6 +125,21 @@ func discoverCasesFile(file string, opts discoverCaseOptions, stdout io.Writer) 
 	}
 	fmt.Fprintf(stdout, "%s, %s\n", green(plural(summary.cases, "case")), green(plural(summary.steps, "step")))
 	return summary, 0
+}
+
+func printSetupChecks(stdout io.Writer, spec *Spec) {
+	for _, command := range spec.Setup.Build {
+		fmt.Fprintf(stdout, "%s %s\n", cyan("BUILD"), command)
+	}
+	for _, service := range spec.Setup.Services {
+		fmt.Fprintf(stdout, "%s %s\n", cyan("SERVICE"), service.Name)
+		fmt.Fprintf(stdout, "%s %s\n", cyan("COMMAND"), serviceCommandLabel(service, spec.Subject.Binary))
+		if service.Ready.Shell != "" {
+			fmt.Fprintf(stdout, "%s %s\n", cyan("READY"), service.Ready.Shell)
+		} else if service.Ready.Log != "" {
+			fmt.Fprintf(stdout, "%s log %q\n", cyan("READY"), service.Ready.Log)
+		}
+	}
 }
 
 func (summary *discoverSummary) add(other discoverSummary) {

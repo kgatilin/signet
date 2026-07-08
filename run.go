@@ -18,6 +18,8 @@ type runOptions struct {
 	paths          []string
 	yes            bool
 	verbose        bool
+	keepTemp       bool
+	noBuild        bool
 	binaryOverride string
 }
 
@@ -40,6 +42,11 @@ type checkFailure struct {
 	check   string
 	message string
 }
+
+const (
+	runKindRead  = "read"
+	runKindWrite = "write"
+)
 
 func runAcceptance(opts runOptions, stdout, stderr io.Writer, stdin io.Reader) int {
 	files, err := acceptanceFilesForPaths(opts.paths)
@@ -74,15 +81,20 @@ func runAcceptance(opts runOptions, stdout, stderr io.Writer, stdin io.Reader) i
 
 func printRunHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  signet run <path>... [--yes] [--verbose] [--binary <path>]
+  signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]
 
 Run acceptance YAML files against their subject binaries. Paths may be files or
 directories; directories are searched recursively for acceptance.yaml and
 *.acceptance.yaml.
 
+Before cases run, signet executes setup.build commands and starts setup.services
+background processes, tearing services down afterwards.
+
 Options:
   --yes            Run without per-command confirmation.
   --verbose        Print executed command, exit code, stdout, and stderr.
+  --keep-temp      Keep setup temporary files after the run.
+  --no-build       Skip setup.build and use the existing binary as-is.
   --binary <path>  Override subject.binary for run.
 `)
 }
@@ -99,9 +111,23 @@ func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmRead
 		steps: countSteps(spec),
 	}
 
+	setup, setupErrs := prepareSetup(spec, opts.keepTemp)
+	if len(setupErrs) > 0 {
+		printInvalid(stdout, file, setupErrs)
+		summary.invalidGroups = 1
+		return summary, 1
+	}
+	defer setup.cleanup()
+
 	binary := spec.Subject.Binary
 	if opts.binaryOverride != "" {
 		binary = opts.binaryOverride
+	}
+	binary, err := setup.expandString(binary)
+	if err != nil {
+		printInvalid(stdout, file, []validationError{{Path: "subject.binary", Message: err.Error()}})
+		summary.invalidGroups = 1
+		return summary, 1
 	}
 	if binary == "" && needsBinary(spec) {
 		fmt.Fprintf(stdout, "%s subject.binary: required for steps using run.args\n", red("invalid"))
@@ -109,10 +135,28 @@ func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmRead
 		return summary, 1
 	}
 
+	setup.binary = binary
+
 	if binary == "" {
 		fmt.Fprintf(stdout, "%s shell commands\n", dim("using"))
 	} else {
 		fmt.Fprintf(stdout, "%s binary %s\n", dim("using"), binary)
+	}
+
+	if !opts.noBuild && len(spec.Setup.Build) > 0 {
+		if !runBuild(spec, setup, stdout, stderr) {
+			summary.invalidGroups = 1
+			return summary, 1
+		}
+	}
+
+	if len(spec.Setup.Services) > 0 {
+		services, ok := startServices(spec, setup, stdout, stderr)
+		defer stopServices(services, stdout)
+		if !ok {
+			summary.invalidGroups = 1
+			return summary, 1
+		}
 	}
 
 	for caseIndex, c := range spec.Cases {
@@ -120,16 +164,22 @@ func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmRead
 			printCaseSeparator(stdout)
 		}
 		fmt.Fprintf(stdout, "%s %s\n", cyan("CASE"), caseDisplay(c))
-		for _, step := range c.Steps {
+		for stepIndex, step := range c.Steps {
+			step, err := expandStep(step, setup)
+			if err != nil {
+				printInvalid(stdout, file, []validationError{{Path: fmt.Sprintf("cases[%d].steps[%d].run", caseIndex, stepIndex), Message: err.Error()}})
+				summary.invalidGroups = 1
+				return summary, 1
+			}
 			fmt.Fprintf(stdout, "%s %s\n", cyan("RUN"), step.Name)
-			if shouldConfirm(spec, opts) {
+			if shouldConfirm(spec, opts, step) {
 				if !confirmStep(confirmReader, stdout, step, binary) {
-					fmt.Fprintf(stdout, "%s (use --yes to skip confirmation)\n", yellow("aborted"))
+					fmt.Fprintln(stdout, abortMessage(step))
 					return summary, 130
 				}
 			}
 
-			result := executeStep(step, spec, binary)
+			result := executeStep(step, spec, binary, setup.commandEnv())
 			if opts.verbose {
 				printStepTrace(stdout, step, binary, result)
 			}
@@ -208,7 +258,10 @@ func printCapturedStream(stdout io.Writer, name, value string) {
 	}
 }
 
-func shouldConfirm(spec *Spec, opts runOptions) bool {
+func shouldConfirm(spec *Spec, opts runOptions, step Step) bool {
+	if isWriteStep(step) {
+		return true
+	}
 	if opts.yes {
 		return false
 	}
@@ -230,13 +283,37 @@ func needsBinary(spec *Spec) bool {
 }
 
 func confirmStep(reader *bufio.Reader, stdout io.Writer, step Step, binary string) bool {
-	fmt.Fprintf(stdout, "%s %s: %s %s ", yellow("Confirm"), step.Name, formatCommand(step, binary), dim("[y/N] (use --yes to skip)"))
+	label := "Confirm"
+	hint := "[y/N] (use --yes to skip)"
+	if isWriteStep(step) {
+		label = "Confirm WRITE"
+		hint = "[y/N]"
+	}
+	fmt.Fprintf(stdout, "%s %s: %s %s ", yellow(label), step.Name, formatCommand(step, binary), dim(hint))
 	answer, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false
 	}
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	return answer == "y" || answer == "yes"
+}
+
+func abortMessage(step Step) string {
+	if isWriteStep(step) {
+		return yellow("aborted")
+	}
+	return fmt.Sprintf("%s (use --yes to skip confirmation)", yellow("aborted"))
+}
+
+func isWriteStep(step Step) bool {
+	return normalizedRunKind(step) == runKindWrite
+}
+
+func normalizedRunKind(step Step) string {
+	if step.Run.Kind == "" {
+		return runKindRead
+	}
+	return step.Run.Kind
 }
 
 func formatCommand(step Step, binary string) string {
@@ -275,7 +352,7 @@ func commandArgs(step Step) []string {
 	return step.Run.Args
 }
 
-func executeStep(step Step, spec *Spec, binary string) commandResult {
+func executeStep(step Step, spec *Spec, binary string, env []string) commandResult {
 	timeout := 10 * time.Second
 	if spec.Defaults.Timeout != "" {
 		if parsed, err := time.ParseDuration(spec.Defaults.Timeout); err == nil {
@@ -300,6 +377,9 @@ func executeStep(step Step, spec *Spec, binary string) commandResult {
 	if step.Run.Stdin != "" {
 		cmd.Stdin = strings.NewReader(step.Run.Stdin)
 	}
+	if env != nil {
+		cmd.Env = env
+	}
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -307,10 +387,16 @@ func executeStep(step Step, spec *Spec, binary string) commandResult {
 	cmd.Stderr = &errOut
 
 	err := cmd.Run()
+	return finishCommandResult(ctx, out.String(), errOut.String(), err)
+}
+
+// finishCommandResult turns a finished command's streams and error into a
+// commandResult, accounting for context timeouts and non-exit failures.
+func finishCommandResult(ctx context.Context, stdout, stderr string, err error) commandResult {
 	result := commandResult{
 		exitCode: 0,
-		stdout:   out.String(),
-		stderr:   errOut.String(),
+		stdout:   stdout,
+		stderr:   stderr,
 		err:      err,
 	}
 	if ctx.Err() == context.DeadlineExceeded {

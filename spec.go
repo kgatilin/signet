@@ -15,6 +15,7 @@ type Spec struct {
 	Suite       string   `yaml:"suite"`
 	Description string   `yaml:"description"`
 	Subject     Subject  `yaml:"subject"`
+	Setup       Setup    `yaml:"setup"`
 	Defaults    Defaults `yaml:"defaults"`
 	Cases       []Case   `yaml:"cases"`
 }
@@ -41,6 +42,7 @@ type Step struct {
 }
 
 type Run struct {
+	Kind    string   `yaml:"kind"`
 	Args    []string `yaml:"args"`
 	Shell   string   `yaml:"shell"`
 	Stdin   string   `yaml:"stdin"`
@@ -142,6 +144,7 @@ func validateSpec(spec *Spec) []validationError {
 	if spec.Version != 1 {
 		errs = append(errs, validationError{Path: "version", Message: "must be 1"})
 	}
+	errs = append(errs, validateSetup(spec.Setup)...)
 	if len(spec.Cases) == 0 {
 		errs = append(errs, validationError{Path: "cases", Message: "must contain at least one case"})
 	}
@@ -169,6 +172,9 @@ func validateSpec(spec *Spec) []validationError {
 			path := fmt.Sprintf("cases[%d].steps[%d]", caseIndex, stepIndex)
 			if strings.TrimSpace(step.Name) == "" {
 				errs = append(errs, validationError{Path: path + ".name", Message: "is required"})
+			}
+			if step.Run.Kind != "" && step.Run.Kind != runKindRead && step.Run.Kind != runKindWrite {
+				errs = append(errs, validationError{Path: path + ".run.kind", Message: "must be read or write"})
 			}
 			if len(step.Run.Args) == 0 && strings.TrimSpace(step.Run.Shell) == "" {
 				errs = append(errs, validationError{Path: path + ".run.args", Message: "must contain at least one argument unless run.shell is set"})

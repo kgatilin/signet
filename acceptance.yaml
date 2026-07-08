@@ -30,6 +30,7 @@ cases:
               - "signet completion zsh"
               - "--yes"
               - "--verbose"
+              - "--keep-temp"
               - "--binary"
             notContains:
               - "signet discover"
@@ -96,6 +97,7 @@ cases:
               - "signet run <path>..."
               - "--yes"
               - "--verbose"
+              - "--keep-temp"
               - "--binary"
             notContains:
               - "invalid --help"
@@ -434,6 +436,63 @@ cases:
               - "FAIL"
               - "panic"
 
+  - id: run-setup
+    name: run creates temporary setup files for a contract
+    steps:
+      - name: run setup fixture
+        run:
+          args: ["run", "testdata/setup.acceptance.yaml", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "CASE id=setup-file-variable name=\"setup file variables feed live commands\""
+              - "PASS read generated config"
+              - "PASS expand setup dir in shell"
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - ".myapp"
+              - "FAIL"
+              - "panic"
+
+  - id: run-setup-env-files
+    name: run loads setup dotenv files for direct commands
+    steps:
+      - name: inspect setup env file fixture
+        run:
+          args: ["cases", "testdata/setup-env.acceptance.yaml", "--checks"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "CASE id=setup-env-file name=\"setup envFiles feed direct commands\""
+              - "COMMAND /usr/bin/printenv SIGNET_ACCEPTANCE_SETUP_ENV_VALUE"
+              - "COMMAND /usr/bin/printenv SIGNET_ACCEPTANCE_SETUP_ENV_REQUIRED"
+            notContains:
+              - "/bin/sh -c"
+              - "panic"
+
+      - name: run setup env file fixture
+        run:
+          args: ["run", "testdata/setup-env.acceptance.yaml", "--yes"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "CASE id=setup-env-file name=\"setup envFiles feed direct commands\""
+              - "PASS print loaded env var"
+              - "PASS require loaded env var"
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - "/bin/sh -c"
+              - "FAIL"
+              - "panic"
+
   - id: run-fail
     name: run reports concise check failures
     steps:
@@ -495,6 +554,50 @@ cases:
               - "PASS passing echo command"
               - "panic"
 
+  - id: run-write-kind
+    name: write steps require confirmation even when read prompts are skipped
+    steps:
+      - name: inspect write kind
+        run:
+          args: ["cases", "testdata/write.acceptance.yaml", "--checks"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "STEP create sample"
+              - "KIND write"
+              - "COMMAND /bin/echo created"
+
+      - name: decline write prompt despite yes flag
+        run:
+          args: ["run", "testdata/write.acceptance.yaml", "--yes"]
+          stdin: "n\n"
+          timeout: 5s
+        expect:
+          exitCode: 130
+          stdout:
+            contains:
+              - "Confirm WRITE"
+              - "create sample"
+              - "aborted"
+            notContains:
+              - "PASS create sample"
+              - "use --yes to skip"
+
+      - name: accept write prompt despite yes flag
+        run:
+          args: ["run", "testdata/write.acceptance.yaml", "--yes"]
+          stdin: "y\n"
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "Confirm WRITE"
+              - "PASS create sample"
+              - "0 failed"
+
   - id: run-binary-override
     name: binary override targets a different final binary
     steps:
@@ -515,4 +618,105 @@ cases:
               - "using binary /bin/echo"
               - "0 failed"
             notContains:
+              - "panic"
+
+  - id: run-build
+    name: setup.build runs before cases and ${binary} expands
+    steps:
+      - name: run build fixture
+        run:
+          args: ["run", "testdata/build.acceptance.yaml", "--yes"]
+          timeout: 30s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "BUILD echo built-token"
+              - "PASS read build marker"
+              - "PASS binary variable expands"
+            contains:
+              - "1 case"
+              - "2 steps"
+              - "0 failed"
+            notContains:
+              - "FAIL"
+              - "panic"
+
+  - id: run-services
+    name: setup.services start before cases and stop after
+    steps:
+      - name: run services fixture
+        run:
+          args: ["run", "testdata/services.acceptance.yaml", "--yes"]
+          timeout: 30s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "SERVICE fileserver"
+              - "PASS build marker present"
+              - "PASS service wrote its marker"
+              - "PASS testdata/services.acceptance.yaml"
+              - "STOP fileserver"
+            contains:
+              - "0 failed"
+            notContains:
+              - "FAIL"
+              - "panic"
+
+  - id: cases-setup-build-services
+    name: cases --checks makes build and services visible
+    steps:
+      - name: inspect build and services
+        run:
+          args: ["cases", "testdata/services.acceptance.yaml", "--checks"]
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "BUILD echo ready-to-serve"
+              - "SERVICE fileserver"
+              - "COMMAND echo listening"
+              - "READY log \"listening\""
+              - "CASES"
+              - "CASE id=service-up"
+            notContains:
+              - "panic"
+
+  - id: run-build-gate
+    name: a failing build blocks the cases
+    steps:
+      - name: run failing build fixture
+        run:
+          args: ["run", "testdata/no-build.acceptance.yaml", "--yes"]
+          timeout: 10s
+        expect:
+          exitCode: 1
+          stdout:
+            orderedContains:
+              - "BUILD exit 7"
+              - "FAIL build: exit 7"
+            notContains:
+              - "standalone-ok"
+              - "CASE id=independent"
+              - "PASS"
+              - "panic"
+
+  - id: run-no-build
+    name: --no-build skips setup.build and runs the existing binary
+    steps:
+      - name: run with no-build
+        run:
+          args: ["run", "testdata/no-build.acceptance.yaml", "--yes", "--no-build"]
+          timeout: 10s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "PASS standalone check"
+              - "0 failed"
+            notContains:
+              - "BUILD"
+              - "FAIL"
               - "panic"
