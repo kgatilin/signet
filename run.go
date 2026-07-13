@@ -91,7 +91,7 @@ Before cases run, signet executes setup.build commands and starts setup.services
 background processes, tearing services down afterwards.
 
 Options:
-  --yes            Run without per-command confirmation.
+  --yes            Skip confirmation prompts for write steps.
   --verbose        Print executed command, exit code, stdout, and stderr.
   --keep-temp      Keep setup temporary files after the run.
   --no-build       Skip setup.build and use the existing binary as-is.
@@ -174,7 +174,7 @@ func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmRead
 			fmt.Fprintf(stdout, "%s %s\n", cyan("RUN"), step.Name)
 			if shouldConfirm(spec, opts, step) {
 				if !confirmStep(confirmReader, stdout, step, binary) {
-					fmt.Fprintln(stdout, abortMessage(step))
+					fmt.Fprintln(stdout, abortMessage())
 					return summary, 130
 				}
 			}
@@ -259,8 +259,8 @@ func printCapturedStream(stdout io.Writer, name, value string) {
 }
 
 func shouldConfirm(spec *Spec, opts runOptions, step Step) bool {
-	if isWriteStep(step) {
-		return true
+	if !isWriteStep(step) {
+		return false
 	}
 	if opts.yes {
 		return false
@@ -282,14 +282,10 @@ func needsBinary(spec *Spec) bool {
 	return false
 }
 
+// confirmStep prompts before a write step. Read steps never reach here because
+// shouldConfirm returns false for them, so this is always a write confirmation.
 func confirmStep(reader *bufio.Reader, stdout io.Writer, step Step, binary string) bool {
-	label := "Confirm"
-	hint := "[y/N] (use --yes to skip)"
-	if isWriteStep(step) {
-		label = "Confirm WRITE"
-		hint = "[y/N]"
-	}
-	fmt.Fprintf(stdout, "%s %s: %s %s ", yellow(label), step.Name, formatCommand(step, binary), dim(hint))
+	fmt.Fprintf(stdout, "%s %s: %s %s ", yellow("Confirm WRITE"), step.Name, formatCommand(step, binary), dim("[y/N] (use --yes to skip)"))
 	answer, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return false
@@ -298,10 +294,7 @@ func confirmStep(reader *bufio.Reader, stdout io.Writer, step Step, binary strin
 	return answer == "y" || answer == "yes"
 }
 
-func abortMessage(step Step) string {
-	if isWriteStep(step) {
-		return yellow("aborted")
-	}
+func abortMessage() string {
 	return fmt.Sprintf("%s (use --yes to skip confirmation)", yellow("aborted"))
 }
 

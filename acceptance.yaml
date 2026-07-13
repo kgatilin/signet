@@ -534,28 +534,26 @@ cases:
             notContains:
               - "FAIL"
 
-  - id: run-confirm
-    name: run asks for confirmation by default
+  - id: run-read-no-confirm
+    name: read steps run without confirmation
     steps:
-      - name: decline first prompt
+      - name: read steps never prompt
         run:
           args: ["run", "testdata/pass.acceptance.yaml"]
-          stdin: "n\n"
+          stdin: ""
           timeout: 5s
         expect:
-          exitCode: 130
+          exitCode: 0
           stdout:
             contains:
-              - "Confirm"
-              - "passing echo command"
-              - "aborted"
-              - "--yes"
-            notContains:
               - "PASS passing echo command"
+              - "0 failed"
+            notContains:
+              - "Confirm"
               - "panic"
 
   - id: run-write-kind
-    name: write steps require confirmation even when read prompts are skipped
+    name: write steps prompt by default and are skipped by --yes
     steps:
       - name: inspect write kind
         run:
@@ -569,9 +567,9 @@ cases:
               - "KIND write"
               - "COMMAND /bin/echo created"
 
-      - name: decline write prompt despite yes flag
+      - name: decline write prompt
         run:
-          args: ["run", "testdata/write.acceptance.yaml", "--yes"]
+          args: ["run", "testdata/write.acceptance.yaml"]
           stdin: "n\n"
           timeout: 5s
         expect:
@@ -581,13 +579,14 @@ cases:
               - "Confirm WRITE"
               - "create sample"
               - "aborted"
+              - "use --yes to skip"
             notContains:
               - "PASS create sample"
-              - "use --yes to skip"
+              - "panic"
 
-      - name: accept write prompt despite yes flag
+      - name: accept write prompt
         run:
-          args: ["run", "testdata/write.acceptance.yaml", "--yes"]
+          args: ["run", "testdata/write.acceptance.yaml"]
           stdin: "y\n"
           timeout: 5s
         expect:
@@ -597,6 +596,21 @@ cases:
               - "Confirm WRITE"
               - "PASS create sample"
               - "0 failed"
+
+      - name: yes flag skips write prompt
+        run:
+          args: ["run", "testdata/write.acceptance.yaml", "--yes"]
+          stdin: ""
+          timeout: 5s
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "PASS create sample"
+              - "0 failed"
+            notContains:
+              - "Confirm"
+              - "panic"
 
   - id: run-binary-override
     name: binary override targets a different final binary

@@ -46,7 +46,7 @@ signet completion zsh
 
 | Flag | Effect |
 |------|--------|
-| `--yes` | Skip per-command confirmation for read steps. Write steps still prompt. |
+| `--yes` | Skip the confirmation prompt for write steps. Read steps never prompt. |
 | `--verbose`, `-v` | Print each executed command, its exit code, stdout, and stderr. |
 | `--keep-temp` | Keep the setup temporary directory on disk after the run. |
 | `--no-build` | Skip `setup.build` and run against the existing binary as-is. |
@@ -97,7 +97,7 @@ setup:                           # everything prepared before cases run
 
 defaults:
   timeout: 10s                   # per-step timeout (default 10s)
-  confirm: true                  # prompt before read steps (default true)
+  confirm: true                  # prompt before write steps (default true)
 
 cases:
   - id: round-trip               # required, unique; [A-Za-z0-9][A-Za-z0-9._-]*
@@ -174,7 +174,9 @@ Each service has:
 - `timeout` — per-step timeout as a Go duration (`10s`, `2m`); default `10s`.
   A step's `run.timeout` overrides it. Build commands use a fixed `5m` timeout;
   readiness probes use `5s` per attempt.
-- `confirm` — whether read steps prompt before executing; default `true`.
+- `confirm` — whether write steps prompt before executing; default `true`.
+  `--yes` skips the prompt regardless; setting `confirm: false` pre-approves
+  write steps suite-wide. Read steps never prompt.
 
 ### `cases` / `steps`
 
@@ -221,12 +223,9 @@ fails the run.
 
 ## Confirmation
 
-By default `signet run` prompts before every step. `--yes` (or
-`defaults.confirm: false`) skips prompts for **read** steps only.
-
-Steps marked `run.kind: write` — create, update, delete, deploy, and similar
-mutating operations — **always** require an interactive `y`/`yes` confirmation,
-even with `--yes` or `defaults.confirm: false`:
+**Read steps never prompt** — they run straight through. Confirmation applies
+only to steps marked `run.kind: write` (create, update, delete, deploy, and
+similar mutating operations):
 
 ```yaml
 steps:
@@ -235,6 +234,11 @@ steps:
       kind: write
       args: ["thing", "create", "--name", "acceptance-smoke"]
 ```
+
+A write step prompts for an interactive `y`/`yes` confirmation by default.
+Pass `--yes` to skip the prompt for the run, or set `defaults.confirm: false`
+in the spec to pre-approve write steps suite-wide. A declined prompt aborts the
+run with exit code `130`.
 
 `setup.build` and `setup.services` are declared infrastructure and run without a
 prompt. `signet cases --checks` prints `KIND write` for write steps and shows the

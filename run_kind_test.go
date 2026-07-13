@@ -7,28 +7,44 @@ import (
 	"testing"
 )
 
-func TestWriteStepAlwaysRequiresConfirmation(t *testing.T) {
-	confirm := false
-	spec := &Spec{Defaults: Defaults{Confirm: &confirm}}
+func TestConfirmationSemantics(t *testing.T) {
+	confirmTrue := true
+	confirmFalse := false
 
 	readStep := Step{Run: Run{Kind: runKindRead}}
 	writeStep := Step{Run: Run{Kind: runKindWrite}}
 
-	if shouldConfirm(spec, runOptions{yes: true}, readStep) {
-		t.Fatal("read step should honor --yes")
+	// Read steps never prompt, regardless of --yes or defaults.confirm.
+	unset := &Spec{}
+	if shouldConfirm(unset, runOptions{}, readStep) {
+		t.Fatal("read step must never prompt")
 	}
-	if shouldConfirm(spec, runOptions{}, readStep) {
-		t.Fatal("read step should honor defaults.confirm=false")
+	if shouldConfirm(unset, runOptions{yes: true}, readStep) {
+		t.Fatal("read step must never prompt with --yes")
 	}
-	if !shouldConfirm(spec, runOptions{yes: true}, writeStep) {
-		t.Fatal("write step must require confirmation even with --yes")
+	if shouldConfirm(&Spec{Defaults: Defaults{Confirm: &confirmTrue}}, runOptions{}, readStep) {
+		t.Fatal("read step must never prompt even with defaults.confirm=true")
 	}
-	if !shouldConfirm(spec, runOptions{}, writeStep) {
-		t.Fatal("write step must require confirmation even with defaults.confirm=false")
+
+	// Write steps prompt by default.
+	if !shouldConfirm(unset, runOptions{}, writeStep) {
+		t.Fatal("write step must prompt by default")
+	}
+	// --yes skips the write prompt.
+	if shouldConfirm(unset, runOptions{yes: true}, writeStep) {
+		t.Fatal("write step should honor --yes")
+	}
+	// defaults.confirm=false pre-approves writes suite-wide.
+	if shouldConfirm(&Spec{Defaults: Defaults{Confirm: &confirmFalse}}, runOptions{}, writeStep) {
+		t.Fatal("write step should honor defaults.confirm=false")
+	}
+	// defaults.confirm=true keeps the write prompt.
+	if !shouldConfirm(&Spec{Defaults: Defaults{Confirm: &confirmTrue}}, runOptions{}, writeStep) {
+		t.Fatal("write step must prompt with defaults.confirm=true")
 	}
 }
 
-func TestWriteConfirmationPromptDoesNotSuggestYesBypass(t *testing.T) {
+func TestWriteConfirmationPromptSuggestsYesBypass(t *testing.T) {
 	step := Step{
 		Name: "create sample",
 		Run:  Run{Kind: runKindWrite, Args: []string{"create"}},
@@ -44,8 +60,8 @@ func TestWriteConfirmationPromptDoesNotSuggestYesBypass(t *testing.T) {
 	if !strings.Contains(output, "Confirm WRITE") {
 		t.Fatalf("expected write prompt marker, got %q", output)
 	}
-	if strings.Contains(output, "--yes") {
-		t.Fatalf("write prompt must not suggest --yes bypass, got %q", output)
+	if !strings.Contains(output, "--yes") {
+		t.Fatalf("write prompt must advertise the --yes bypass, got %q", output)
 	}
 }
 

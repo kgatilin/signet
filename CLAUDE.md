@@ -29,10 +29,10 @@
 - Specs are discovered recursively from `acceptance.yaml` and
   `*.acceptance.yaml`.
 - Acceptance command safety is explicit: `run.kind` defaults to `read`; mark
-  create/update/delete/deploy style steps as `write`. Write steps always require
-  interactive confirmation during `signet run`, even when `--yes` is passed or
-  `defaults.confirm: false` is set. `cases --checks` should make write steps
-  visible with `KIND write`.
+  create/update/delete/deploy style steps as `write`. Read steps never prompt.
+  Write steps prompt for interactive confirmation during `signet run` by default;
+  `--yes` skips the prompt, and `defaults.confirm: false` pre-approves write steps
+  suite-wide. `cases --checks` should make write steps visible with `KIND write`.
 - `setup.files` creates per-acceptance-file temporary files. Keep variable
   expansion limited to explicit setup variables. Canonical variables are
   `${file.<name>}` and `${tmp}`; `${setup.files.<name>}` and `${setup.dir}` are

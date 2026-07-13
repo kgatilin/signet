@@ -153,7 +153,7 @@ Commands:
   completion   Generate shell completion scripts.
 
 Options:
-  --yes            Run without per-command confirmation.
+  --yes            Skip confirmation prompts for write steps.
   --verbose        Print executed command, exit code, stdout, and stderr.
   --keep-temp      Keep setup temporary files after the run.
   --no-build       Skip setup.build and use the existing binary.
