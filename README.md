@@ -206,8 +206,8 @@ Each service has:
 
 ## Variables
 
-These expand inside `subject.binary`, `setup.build`, `run.args`, `run.shell`,
-`run.stdin`, service `args`/`shell`, and `ready.shell`:
+These expand inside `subject.binary`, `setup.build`, `setup.files` `content`,
+`run.args`, `run.shell`, `run.stdin`, service `args`/`shell`, and `ready.shell`:
 
 | Variable | Expands to | Alias |
 |----------|-----------|-------|
@@ -220,6 +220,11 @@ steps invoke it directly, and `${binary}` references its path in shell commands.
 (`${binary}` is not available inside `subject.binary` itself — that field defines
 it — but `${tmp}` and `${file.<name>}` are.) Referencing an unknown variable
 fails the run.
+
+Inside `setup.files` `content`, `${file.<name>}` resolves only to files declared
+earlier in the list (files are written top to bottom); `${tmp}` is always
+available. This lets a generated config point runtime paths — a file-backed
+event log, a scratch database — into `${tmp}` so each run starts isolated.
 
 ## Confirmation
 

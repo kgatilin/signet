@@ -220,7 +220,12 @@ func prepareSetup(spec *Spec, keepTemp bool) (*setupContext, []validationError) 
 			ctx.cleanup()
 			return nil, []validationError{{Path: fmt.Sprintf("setup.files[%d].path", fileIndex), Message: err.Error()}}
 		}
-		if err := os.WriteFile(target, []byte(file.Content), 0600); err != nil {
+		content, err := ctx.expandString(file.Content)
+		if err != nil {
+			ctx.cleanup()
+			return nil, []validationError{{Path: fmt.Sprintf("setup.files[%d].content", fileIndex), Message: err.Error()}}
+		}
+		if err := os.WriteFile(target, []byte(content), 0600); err != nil {
 			ctx.cleanup()
 			return nil, []validationError{{Path: fmt.Sprintf("setup.files[%d].path", fileIndex), Message: err.Error()}}
 		}

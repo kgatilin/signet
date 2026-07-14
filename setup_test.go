@@ -129,6 +129,43 @@ func TestSetupKeepTempOptionPreservesDirectory(t *testing.T) {
 	}
 }
 
+func TestPrepareSetupExpandsFileContent(t *testing.T) {
+	spec := minimalSetupTestSpec()
+	spec.Setup.Files = []SetupFile{
+		{Name: "config", Path: "config.yaml", Content: "store: ${tmp}/events.jsonl\n"},
+	}
+
+	ctx, errs := prepareSetup(&spec, false)
+	if len(errs) > 0 {
+		t.Fatalf("prepareSetup returned errors: %+v", errs)
+	}
+	defer ctx.cleanup()
+
+	written, err := os.ReadFile(ctx.files["config"])
+	if err != nil {
+		t.Fatalf("read generated file: %v", err)
+	}
+	want := "store: " + ctx.dir + "/events.jsonl\n"
+	if string(written) != want {
+		t.Fatalf("file content not expanded: got %q, want %q", string(written), want)
+	}
+}
+
+func TestPrepareSetupUnknownVariableInFileContent(t *testing.T) {
+	spec := minimalSetupTestSpec()
+	spec.Setup.Files = []SetupFile{
+		{Name: "config", Path: "config.yaml", Content: "value: ${file.missing}\n"},
+	}
+
+	ctx, errs := prepareSetup(&spec, false)
+	if ctx != nil {
+		ctx.cleanup()
+	}
+	if !hasValidationError(errs, "setup.files[0].content") {
+		t.Fatalf("expected setup.files[0].content validation error, got %+v", errs)
+	}
+}
+
 func TestPrepareSetupRequireEnv(t *testing.T) {
 	t.Run("missing or empty", func(t *testing.T) {
 		const name = "SIGNET_TEST_REQUIRED_EMPTY"
