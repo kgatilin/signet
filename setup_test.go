@@ -51,7 +51,7 @@ func TestPrepareSetupCreatesFilesAndExpandsVariables(t *testing.T) {
 		Args:  []string{"--config", "${file.appConfig}"},
 		Shell: "cat ${file.appConfig}",
 		Stdin: "${tmp}",
-	}}, ctx)
+	}}, ctx, nil)
 	if err != nil {
 		t.Fatalf("expandStep returned error: %v", err)
 	}

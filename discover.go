@@ -113,8 +113,14 @@ func discoverCasesFile(file string, opts discoverCaseOptions, stdout io.Writer) 
 				fmt.Fprintf(stdout, "%s %s\n", cyan("KIND"), step.Run.Kind)
 			}
 			fmt.Fprintf(stdout, "%s %s\n", cyan("COMMAND"), formatCommand(step, spec.Subject.Binary))
+			for _, name := range stepCaptureRefs(step) {
+				fmt.Fprintf(stdout, "%s capture.%s\n", cyan("USES"), name)
+			}
 			for _, check := range describeChecks(step) {
 				fmt.Fprintf(stdout, "%s %s\n", yellow("CHECK"), check)
+			}
+			for _, capture := range step.Capture {
+				fmt.Fprintf(stdout, "%s %s stdout %s\n", cyan("CAPTURE"), capture.Name, displayPointer(capture.Pointer))
 			}
 		}
 	}

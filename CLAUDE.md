@@ -46,6 +46,13 @@
   runs. Each service uses `args` (argv against `subject.binary`) or `shell`;
   `ready.shell` (polled to exit 0) or `ready.log` (substring) gates case start.
   `cases --checks` shows `BUILD`/`SERVICE`/`COMMAND`/`READY` so setup is visible.
+- Step `capture` maps a name to a JSON Pointer over stdout JSON (`capture.go`).
+  Values exist only after the step passes, are scoped to the case, and expand
+  as `${capture.<name>}` in `run.args`/`run.shell`/`run.stdin` and expect
+  values (regexp-quoted in `matches`). `validate` rejects references not
+  captured by an earlier step in the case; numbers keep their literal text.
+  Self-acceptance strings must not contain a literal `${capture.` — use an
+  escaped `matches` pattern instead.
 - Update `README.md` with every new public feature, CLI shape change, YAML
   field, or output contract that users need to understand.
 

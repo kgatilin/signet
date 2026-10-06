@@ -1,0 +1,27 @@
+version: 1
+suite: capture-invalid-fixture
+
+defaults:
+  timeout: 5s
+
+cases:
+  - id: first
+    name: declares a capture
+    steps:
+      - name: produce
+        run:
+          shell: echo '{"id":"a"}'
+        expect:
+          exitCode: 0
+        capture:
+          id: /id
+          bad: id
+
+  - id: second
+    name: cannot see captures from another case
+    steps:
+      - name: consume
+        run:
+          shell: echo ${capture.id}
+        expect:
+          exitCode: 0

@@ -36,9 +36,10 @@ type Case struct {
 }
 
 type Step struct {
-	Name   string `yaml:"name"`
-	Run    Run    `yaml:"run"`
-	Expect Expect `yaml:"expect"`
+	Name    string   `yaml:"name"`
+	Run     Run      `yaml:"run"`
+	Expect  Expect   `yaml:"expect"`
+	Capture Captures `yaml:"capture"`
 }
 
 type Run struct {
@@ -123,6 +124,9 @@ func validateNode(root *yaml.Node) []validationError {
 			continue
 		}
 		for stepIndex, stepNode := range steps.Content {
+			if capture := mapLookup(stepNode, "capture"); capture != nil {
+				errs = append(errs, validateCaptureNode(capture, fmt.Sprintf("cases[%d].steps[%d].capture", caseIndex, stepIndex))...)
+			}
 			expect := mapLookup(stepNode, "expect")
 			if expect == nil {
 				continue
@@ -188,6 +192,7 @@ func validateSpec(spec *Spec) []validationError {
 				}
 			}
 		}
+		errs = append(errs, validateCaseCaptures(c, caseIndex)...)
 	}
 
 	if spec.Defaults.Timeout != "" {

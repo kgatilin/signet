@@ -1,0 +1,88 @@
+version: 1
+suite: capture-fixture
+description: Fixture proving stdout JSON captures feed later steps in the same case.
+
+subject:
+  binary: /bin/echo
+
+defaults:
+  timeout: 5s
+  confirm: false
+
+cases:
+  - id: session-flow
+    name: captured ids feed later commands and assertions
+    steps:
+      - name: create session
+        run:
+          kind: write
+          shell: printf '{"contextId":"ctx-42","lastSeq":18446744073709551615,"meta":{"a/b":[{"ok":true}]}}'
+        expect:
+          exitCode: 0
+        capture:
+          contextId: /contextId
+          lastSeq: /lastSeq
+          ok: /meta/a~1b/0/ok
+
+      - name: use context id in a path
+        run:
+          args: ["sessions/${capture.contextId}/messages"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "sessions/${capture.contextId}/messages"
+              - "sessions/ctx-42/messages"
+            matches:
+              - "(?m)^sessions/${capture.contextId}/messages$"
+
+      - name: resume from last seq
+        run:
+          args: ["--after", "${capture.lastSeq}", "--ok", "${capture.ok}"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "--after 18446744073709551615 --ok true"
+
+      - name: pipe captured value on stdin
+        run:
+          shell: cat
+          stdin: "${capture.contextId}"
+        expect:
+          stdout:
+            contains: ["ctx-42"]
+
+      - name: read history advances the cursor
+        run:
+          shell: printf '{"lastSeq":18446744073709551616}'
+        expect:
+          exitCode: 0
+        capture:
+          lastSeq: /lastSeq
+
+      - name: resume from the new cursor
+        run:
+          args: ["--after", "${capture.lastSeq}"]
+        expect:
+          stdout:
+            contains: ["--after 18446744073709551616"]
+
+  - id: second-case
+    name: captures are scoped to their case
+    steps:
+      - name: capture a different context
+        run:
+          shell: echo '{"contextId":"ctx-7"}'
+        expect:
+          exitCode: 0
+        capture:
+          contextId: /contextId
+
+      - name: sees only its own capture
+        run:
+          args: ["${capture.contextId}"]
+        expect:
+          stdout:
+            contains: ["ctx-7"]
+            notContains: ["ctx-42"]

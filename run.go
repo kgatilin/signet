@@ -164,8 +164,19 @@ func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmRead
 			printCaseSeparator(stdout)
 		}
 		fmt.Fprintf(stdout, "%s %s\n", cyan("CASE"), caseDisplay(c))
+		captures := map[string]string{}
 		for stepIndex, step := range c.Steps {
-			step, err := expandStep(step, setup)
+			if missing := unresolvedCaptureRefs(step, captures); len(missing) > 0 {
+				summary.failedSteps++
+				fmt.Fprintf(stdout, "%s %s\n", cyan("RUN"), step.Name)
+				fmt.Fprintf(stdout, "%s %s\n", red("FAIL"), step.Name)
+				for _, name := range missing {
+					fmt.Fprintf(stdout, "  %s ${capture.%s}: unresolved, the step that captures it did not pass; step not run\n", yellow("-"), name)
+				}
+				forgetCaptures(captures, step.Capture)
+				continue
+			}
+			step, err := expandStep(step, setup, captures)
 			if err != nil {
 				printInvalid(stdout, file, []validationError{{Path: fmt.Sprintf("cases[%d].steps[%d].run", caseIndex, stepIndex), Message: err.Error()}})
 				summary.invalidGroups = 1
@@ -185,10 +196,18 @@ func runFile(file string, opts runOptions, stdout, stderr io.Writer, confirmRead
 			}
 			failures := evaluateStep(step, result)
 			if len(failures) == 0 {
+				var values map[string]string
+				values, failures = extractCaptures(step.Capture, result.stdout)
+				for name, value := range values {
+					captures[name] = value
+				}
+			}
+			if len(failures) == 0 {
 				fmt.Fprintf(stdout, "%s %s\n", green("PASS"), step.Name)
 				continue
 			}
 
+			forgetCaptures(captures, step.Capture)
 			summary.failedSteps++
 			fmt.Fprintf(stdout, "%s %s\n", red("FAIL"), step.Name)
 			for _, failure := range failures {

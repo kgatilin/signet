@@ -1,0 +1,58 @@
+version: 1
+suite: capture-fail-fixture
+description: Fixture proving capture failures are explicit and block dependent steps.
+
+defaults:
+  timeout: 5s
+
+cases:
+  - id: malformed-json
+    name: non-JSON stdout fails the capture
+    steps:
+      - name: print text
+        run:
+          shell: echo not-json
+        expect:
+          exitCode: 0
+        capture:
+          id: /id
+
+  - id: missing-pointer
+    name: a missing pointer fails the capture
+    steps:
+      - name: print object without the field
+        run:
+          shell: echo '{"other":1}'
+        expect:
+          exitCode: 0
+        capture:
+          id: /id
+
+  - id: non-scalar
+    name: object and null values fail the capture
+    steps:
+      - name: print nested values
+        run:
+          shell: echo '{"session":{"id":"x"},"cursor":null}'
+        expect:
+          exitCode: 0
+        capture:
+          session: /session
+          cursor: /cursor
+
+  - id: producer-fails
+    name: a failed producer leaves its capture unresolved
+    steps:
+      - name: producer assertion fails
+        run:
+          shell: echo '{"id":"leaked-value"}'
+        expect:
+          exitCode: 3
+        capture:
+          id: /id
+
+      - name: dependent step
+        run:
+          shell: echo dependent-ran-${capture.id}
+        expect:
+          exitCode: 0

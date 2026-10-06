@@ -39,7 +39,7 @@ signet completion zsh
 |------------|---------|
 | `validate` | Parse and statically validate specs. No commands run. Exit `1` on any invalid group. |
 | `run`      | Build the subject, start services, execute each case's steps, and report pass/fail. Exit `1` on any failed check, `130` when a confirmation is declined. |
-| `cases`    | List cases without executing anything. `--checks` also prints each step's command and expected checks, plus the `BUILD`/`SERVICE` setup. |
+| `cases`    | List cases without executing anything. `--checks` also prints each step's command, expected checks, captures (`CAPTURE`) and capture references (`USES`), plus the `BUILD`/`SERVICE` setup. |
 | `completion` | Emit a shell completion script (Cobra). |
 
 ### `run` flags
@@ -119,6 +119,8 @@ cases:
             matches: ["^ok: [0-9]+$"]
           stderr:
             notContains: ["panic"]
+        capture:                 # values read from stdout JSON after the step passes
+          thingId: /items/0/id   # name: JSON Pointer; later steps use ${capture.thingId}
 ```
 
 ## Field reference
@@ -183,7 +185,7 @@ Each service has:
 - Each case needs a unique `id` (`[A-Za-z0-9][A-Za-z0-9._-]*`) and a `name`, and
   at least one step.
 - Each step needs a `name`, a `run` block with `args` or `shell`, and an
-  `expect` block with at least one check.
+  `expect` block with at least one check. `capture` is optional.
 
 ### `run`
 
@@ -204,6 +206,55 @@ Each service has:
 | `orderedContains` | every listed substring is present **and** in the listed order |
 | `matches` | every listed [RE2](https://github.com/google/re2/wiki/Syntax) regular expression matches |
 
+### `capture`
+
+A step can read scalar values from its stdout JSON and hand them to the steps
+after it in the same case. `capture` maps a name to a
+[JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901):
+
+```yaml
+steps:
+  - name: create session
+    run:
+      kind: write
+      args: ["session", "create", "--json"]
+    expect:
+      exitCode: 0
+    capture:
+      contextId: /contextId      # {"contextId": "ctx-1", ...}
+      lastSeq: /history/lastSeq  # nested keys; /items/0 indexes arrays
+
+  - name: append message
+    run:
+      args: ["session", "send", "sessions/${capture.contextId}", "--after", "${capture.lastSeq}"]
+    expect:
+      stdout:
+        contains: ["${capture.contextId}"]
+```
+
+- Reference a value as `${capture.<name>}` in `run.args`, `run.shell`,
+  `run.stdin`, and in `expect.stdout`/`expect.stderr` values. In `matches`
+  the value is regexp-quoted, so it always matches literally.
+- Values are captured only after the producing step passes all its `expect`
+  checks. stdout must be exactly one JSON document (surrounding whitespace is
+  fine); the pointer must resolve to a string, number, or boolean. Strings are
+  substituted unquoted, booleans as `true`/`false`, and numbers exactly as
+  written, so integers keep full precision (uint64 sequences included).
+- Malformed JSON, a pointer that does not resolve, and an object, array, or
+  `null` value fail the step with a `capture <name> stdout <pointer>` line. A
+  step's captures are all-or-nothing.
+- Captures are scoped to one case. A later step may capture the same name again
+  (for example a newer `lastSeq` cursor); references then see the newest value.
+- `validate` rejects a reference that no earlier step in the same case captures,
+  and pointers that are not `""` or `/...` (escape `/` as `~1` and `~` as `~0`
+  inside a key).
+- At run time, when the producing step failed, every step that references its
+  captures fails as `unresolved` without running.
+- Names use `[A-Za-z0-9][A-Za-z0-9._-]*`. Only stdout is read.
+
+`signet cases --checks` prints `CAPTURE <name> stdout <pointer>` for each
+declaration and `USES capture.<name>` for each reference.
+
 ## Variables
 
 These expand inside `subject.binary`, `setup.build`, `setup.files` `content`,
@@ -214,6 +265,7 @@ These expand inside `subject.binary`, `setup.build`, `setup.files` `content`,
 | `${binary}` | the resolved subject binary (honors `--binary`) | `${subject.binary}` |
 | `${tmp}` | the setup temporary directory | `${setup.dir}` |
 | `${file.<name>}` | the path of the generated `setup.files` entry | `${setup.files.<name>}` |
+| `${capture.<name>}` | a value captured by an earlier step of the same case — see [`capture`](#capture); only in `run.args`, `run.shell`, `run.stdin` and `expect` values | |
 
 `subject.binary` is defined once and reused everywhere: argv-form services and
 steps invoke it directly, and `${binary}` references its path in shell commands.
@@ -256,8 +308,9 @@ For each acceptance file `signet run`:
 1. Loads and validates the spec.
 2. Runs setup: env files, `requireEnv`, `files`, then `build`, then `services`
    (waiting for each to be ready).
-3. Runs every case's steps in order, confirming as configured, and evaluates the
-   `expect` checks.
+3. Runs every case's steps in order, confirming as configured, evaluates the
+   `expect` checks, and records the step's `capture` values for the rest of the
+   case.
 4. Stops services (reverse order, `SIGTERM` then `SIGKILL` after `stopTimeout`)
    and removes the temp directory.
 

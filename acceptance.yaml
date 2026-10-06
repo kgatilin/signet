@@ -734,3 +734,122 @@ cases:
               - "BUILD"
               - "FAIL"
               - "panic"
+
+  - id: run-capture
+    name: stdout JSON captures feed later steps in the same case
+    steps:
+      - name: run capture fixture
+        run:
+          args: ["run", "testdata/capture/capture.acceptance.yaml", "--yes"]
+          timeout: 10s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "PASS create session"
+              - "PASS use context id in a path"
+              - "PASS resume from last seq"
+              - "PASS pipe captured value on stdin"
+              - "PASS resume from the new cursor"
+              - "CASE id=second-case"
+              - "PASS sees only its own capture"
+            contains:
+              - "2 cases"
+              - "8 steps"
+              - "0 failed"
+            notContains:
+              - "FAIL"
+              - "panic"
+
+      - name: run capture fixture verbose shows resolved values
+        run:
+          args: ["run", "testdata/capture/capture.acceptance.yaml", "--yes", "--verbose"]
+          timeout: 10s
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "COMMAND /bin/echo sessions/ctx-42/messages"
+              - "COMMAND /bin/echo --after 18446744073709551615 --ok true"
+              - "COMMAND /bin/echo --after 18446744073709551616"
+              - "COMMAND /bin/echo ctx-7"
+            notContains:
+              - "FAIL"
+
+  - id: run-capture-fail
+    name: capture failures are explicit and block dependent steps
+    steps:
+      - name: run failing capture fixture
+        run:
+          args: ["run", "testdata/capture/capture-fail.acceptance.yaml", "--yes", "--verbose"]
+          timeout: 10s
+        expect:
+          exitCode: 1
+          stdout:
+            orderedContains:
+              - "FAIL print text"
+              - "capture id stdout /id: stdout is not valid JSON"
+              - "FAIL print object without the field"
+              - "capture id stdout /id: /id not found"
+              - "FAIL print nested values"
+              - "capture session stdout /session: value is an object"
+              - "capture cursor stdout /cursor: value is null"
+              - "FAIL producer assertion fails"
+              - "exitCode == 3: got 0"
+              - "FAIL dependent step"
+            matches:
+              - '\$\{capture\.id\}: unresolved, the step that captures it did not pass; step not run'
+            contains:
+              - "5 failed"
+            notContains:
+              - "dependent-ran"
+              - "panic"
+
+  - id: validate-capture-invalid
+    name: validate rejects bad pointers and unresolvable capture references
+    steps:
+      - name: validate invalid capture fixture
+        run:
+          args: ["validate", "testdata/capture-invalid.acceptance.yaml"]
+        expect:
+          exitCode: 1
+          stdout:
+            contains:
+              - "invalid testdata/capture-invalid.acceptance.yaml"
+              - "cases[0].steps[0].capture.bad"
+              - "must be empty or start with /"
+              - "cases[1].steps[0]"
+              - "no earlier step in this case captures id"
+            notContains:
+              - "panic"
+
+  - id: cases-capture-checks
+    name: cases --checks shows capture declarations and references
+    steps:
+      - name: inspect capture fixture
+        run:
+          args: ["cases", "testdata/capture/capture.acceptance.yaml", "--case", "session-flow", "--checks"]
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "STEP create session"
+              - "CHECK exitCode == 0"
+              - "CAPTURE contextId stdout /contextId"
+              - "CAPTURE lastSeq stdout /lastSeq"
+              - "CAPTURE ok stdout /meta/a~1b/0/ok"
+              - "STEP use context id in a path"
+              - "USES capture.contextId"
+              - "STEP resume from last seq"
+              - "USES capture.lastSeq"
+              - "USES capture.ok"
+              - "STEP pipe captured value on stdin"
+              - "USES capture.contextId"
+            matches:
+              - 'COMMAND /bin/echo "sessions/\$\{capture\.contextId\}/messages"'
+            contains:
+              - "1 case"
+              - "6 steps"
+              - "10 checks"
+            notContains:
+              - "panic"

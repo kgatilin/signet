@@ -79,7 +79,7 @@ type setupContext struct {
 var (
 	setupNamePattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	setupEnvNamePattern  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	setupVariablePattern = regexp.MustCompile(`\$\{(?:tmp|binary|subject\.binary|file\.[A-Za-z0-9._-]+|setup\.dir|setup\.files\.[A-Za-z0-9._-]+)\}`)
+	setupVariablePattern = regexp.MustCompile(`\$\{(?:tmp|binary|subject\.binary|file\.[A-Za-z0-9._-]+|setup\.dir|setup\.files\.[A-Za-z0-9._-]+|capture\.[A-Za-z0-9._-]+)\}`)
 )
 
 func validateSetup(setup Setup) []validationError {
@@ -449,6 +449,13 @@ func (ctx *setupContext) cleanup() {
 }
 
 func (ctx *setupContext) expandString(value string) (string, error) {
+	return ctx.expandWithCaptures(value, nil)
+}
+
+// expandWithCaptures expands setup variables plus ${capture.<name>} from the
+// current case. Outside a step captures is nil, so a capture reference there is
+// an unknown variable.
+func (ctx *setupContext) expandWithCaptures(value string, captures map[string]string) (string, error) {
 	if value == "" {
 		return value, nil
 	}
@@ -458,6 +465,14 @@ func (ctx *setupContext) expandString(value string) (string, error) {
 			return token
 		}
 		name := strings.TrimSuffix(strings.TrimPrefix(token, "${"), "}")
+		if captureName, ok := strings.CutPrefix(name, "capture."); ok && captures != nil {
+			captured, ok := captures[captureName]
+			if !ok {
+				expandErr = fmt.Errorf("%s is unresolved: no earlier passing step in this case captured it", token)
+				return token
+			}
+			return captured
+		}
 		replacement, ok := ctx.lookup(name)
 		if !ok {
 			expandErr = fmt.Errorf("unknown setup variable %s", token)
@@ -472,9 +487,13 @@ func (ctx *setupContext) expandString(value string) (string, error) {
 }
 
 func (ctx *setupContext) expandStrings(values []string) ([]string, error) {
+	return ctx.expandStringsWithCaptures(values, nil)
+}
+
+func (ctx *setupContext) expandStringsWithCaptures(values []string, captures map[string]string) ([]string, error) {
 	expanded := make([]string, 0, len(values))
 	for _, value := range values {
-		next, err := ctx.expandString(value)
+		next, err := ctx.expandWithCaptures(value, captures)
 		if err != nil {
 			return nil, err
 		}
@@ -502,19 +521,25 @@ func (ctx *setupContext) lookup(name string) (string, bool) {
 	return "", false
 }
 
-func expandStep(step Step, setup *setupContext) (Step, error) {
+// expandStep resolves variables in the step's run fields and capture
+// references in its expectations.
+func expandStep(step Step, setup *setupContext, captures map[string]string) (Step, error) {
+	if captures == nil {
+		captures = map[string]string{}
+	}
 	var err error
-	step.Run.Args, err = setup.expandStrings(step.Run.Args)
+	step.Run.Args, err = setup.expandStringsWithCaptures(step.Run.Args, captures)
 	if err != nil {
 		return step, err
 	}
-	step.Run.Shell, err = setup.expandString(step.Run.Shell)
+	step.Run.Shell, err = setup.expandWithCaptures(step.Run.Shell, captures)
 	if err != nil {
 		return step, err
 	}
-	step.Run.Stdin, err = setup.expandString(step.Run.Stdin)
+	step.Run.Stdin, err = setup.expandWithCaptures(step.Run.Stdin, captures)
 	if err != nil {
 		return step, err
 	}
+	step.Expect = expandExpectCaptures(step.Expect, captures)
 	return step, nil
 }
