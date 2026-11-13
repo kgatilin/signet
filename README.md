@@ -6,6 +6,10 @@ An acceptance contract describes the final CLI command shape and the output
 checks that prove it behaves as expected, without requiring a full e2e test
 framework.
 
+Contracts are written either as YAML specs run by the CLI, or as ordinary Go
+tests with the signet Go SDK (see [Go SDK](#go-sdk)); both produce documents a
+reader can follow without the code.
+
 Acceptance specs use the same schema regardless of where they live. A project
 can keep a single root `acceptance.yaml`, put specs under an `acceptance/`
 directory, or use any other layout that fits the repo. `signet` discovers
@@ -32,6 +36,7 @@ directories. Directories are searched recursively for `acceptance.yaml` and
 signet validate <path>...
 signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]
 signet cases <path>... [--case <id>|--id <id>] [--checks]
+signet report [<file>] [--format yaml|cases]
 signet completion zsh
 ```
 
@@ -40,6 +45,7 @@ signet completion zsh
 | `validate` | Parse and statically validate specs. No commands run. Exit `1` on any invalid group. |
 | `run`      | Build the subject, start services, execute each case's steps, and report pass/fail. Exit `1` on any failed check, `130` when a confirmation is declined. |
 | `cases`    | List cases without executing anything. `--checks` also prints each step's command, expected checks, captures (`CAPTURE`) and capture references (`USES`), plus the `BUILD`/`SERVICE` setup. |
+| `report`   | Read a `go test -json` stream (stdin or a file) of tests written with the Go SDK and print the feature document (`--format yaml`, default) or `GROUP`/`CASE` rows (`--format cases`). Exit `1` when a feature or package failed, `2` on invalid usage. |
 | `completion` | Emit a shell completion script (Cobra). |
 
 ### `run` flags
@@ -317,6 +323,126 @@ For each acceptance file `signet run`:
 Use `signet run --verbose` to print each executed command, exit code, stdout, and
 stderr. Use `signet cases --checks` to inspect every step command without
 executing it.
+
+## Go SDK
+
+`github.com/kgatilin/signet` is a stdlib-only Go package for acceptance tests
+that run under `go test`. A test function declares one feature; scenarios and
+steps become subtests whose keyword and text are recorded with `t.Attr`, so
+`signet report` can rebuild the document from `go test -json`. Assertions are
+not part of the SDK: steps receive `*testing.T`, so testify or plain `if`
+works. A complete module that uses it is in [`examples/`](examples/).
+
+```go
+var app = signet.Subject("go build -o bin/app ./cmd/app", "bin/app")
+
+func TestStore(t *testing.T) {
+    signet.Feature(t, "Key-value store", "Writes apply asynchronously.", func(f *signet.F) {
+        var url string
+        f.BackgroundOnce("a running server", func(t testing.TB) {
+            addr := fmt.Sprintf("127.0.0.1:%d", signet.FreePort(t))
+            app.Service(t, "server", "serve", "--addr", addr).
+                ReadyHTTP("http://"+addr+"/healthz", 200).
+                Start()
+            url = "http://" + addr
+        })
+
+        f.Scenario("put-then-get", "a write becomes readable once applied", func(s *signet.Scenario) {
+            var put *signet.Result
+            s.When("a client puts greeting=hello and it is applied", func(t *testing.T) {
+                put = app.Cmd(t, "put", "greeting", "hello").Env("SERVER=" + url).Run().OK()
+                // wait here (e.g. require.EventuallyWithT) until the state settles
+            }).
+                Then("the put is acknowledged", func(t *testing.T) { put.In(t).StdoutContains("accepted") }).
+                Then("get returns hello", func(t *testing.T) {
+                    app.Cmd(t, "get", "greeting").Env("SERVER=" + url).Run().OK().StdoutContains("hello")
+                })
+        })
+    })
+}
+```
+
+```bash
+go test -json -count=1 ./acceptance/... | signet report               # run, then the document
+SIGNET_LIST=1 go test -json -count=1 ./acceptance/... | signet report # the document, nothing runs
+```
+
+### Structure
+
+| Call | Meaning |
+|------|---------|
+| `Feature(t, name, description, body)` | One feature per test function. `body` only registers; scenarios run after it returns. |
+| `f.BackgroundOnce(text, fn)` | Shared fixture. Runs once, as a step of the first scenario that executes. `fn` gets a `testing.TB` whose `Cleanup`, `TempDir`, `Setenv`, `Chdir`, `Context` and `ArtifactDir` belong to the feature. If it fails, its scenario fails and later scenarios are skipped. |
+| `f.Background(text, fn)` | Fixture run in every scenario before its steps; its resources belong to the scenario. |
+| `f.Scenario(id, name, body)` | `id` is the subtest name: unique, no whitespace or slash. `body` only registers steps. |
+| `s.Given(text, fn)` | Precondition. |
+| `s.When(text, fn).Then(text, fn)...` | Action, then checks nested under it. Waiting until the system settles belongs in the `When`. |
+| `s.Then(text, fn)` | Check directly on the scenario, for scenarios without `When`. |
+
+Execution rules: a failed background, `Given` or `When` skips everything after
+it in the scenario (the checks are still registered, as skipped). A failed
+`Then` does not stop the other checks of its block; later `When` blocks are
+skipped. Subtest names are `Given …`, `When …`, `Then …`, `Background …`, so
+`go test -run 'TestStore/put-then-get'` selects one scenario.
+
+With `SIGNET_LIST=1`, every scenario and step is registered and skipped;
+backgrounds, step closures and builds do not run.
+
+### Fixtures
+
+| Call | Meaning |
+|------|---------|
+| `Subject(buildShell, binaryPath)` | The binary under test. The build runs with `/bin/sh` in the module root (nearest `go.mod`), once per test process, on first use. A relative path resolves against the same root. With `SIGNET_BINARY=<absolute path>` nothing is built. |
+| `app.Path(t)`, `app.Run(t, args...)`, `app.Cmd(t, args...)`, `app.Service(t, name, args...)` | Use the subject. |
+| `Cmd(t, name, args...)` | Any command. Builder: `.Env(kv...)`, `.Dir(dir)`, `.Stdin(s)`, `.Timeout(d)` (default 1m, 0 = test deadline only), then `.Run()`. Runs in its own process group. |
+| `Result` | `ExitCode`, `Stdout`, `Stderr`, `Duration`, `TimedOut`, `Err`; checks `.OK()`, `.Exit(code)`, `.StdoutContains(s)`, `.StderrContains(s)` fail the test the command ran in. `res.In(t)` rebinds the checks to another step's `t`. `JSON[T](res)` decodes stdout. |
+| `Service(t, name, command, args...)` | Background process. Builder: `.Env`, `.Dir`, `.ReadyHTTP(url, status)` (0 = any status), `.ReadyLog(substring)`, `.ReadyTimeout(d)` (default 10s), then `.Start()`. Stopped with `SIGTERM`, then `SIGKILL` after 5s, when the owning test ends. `svc.Log()`, `svc.Stop()`. |
+| `FreePort(t)` | A TCP port on 127.0.0.1 that was free when asked. |
+
+When a test fails, its last five commands and the output of the services it
+started are logged with it.
+
+`go test` caches results and does not track the external binary, so run
+acceptance packages with `-count=1`. Go's per-package processes each build the
+subject once; for many packages, build once and set `SIGNET_BINARY`:
+
+```make
+acceptance: build
+	SIGNET_BINARY=$(CURDIR)/bin/app go test ./acceptance/... -count=1
+```
+
+### Report document
+
+```yaml
+features:
+  - package: example.com/app/acceptance
+    test: TestStore
+    feature: Key-value store
+    description: Writes apply asynchronously.
+    status: pass
+    duration: 1.2s
+    background:
+      - text: a running server
+        scope: feature            # feature = BackgroundOnce, scenario = Background
+        status: pass
+    scenarios:
+      - id: put-then-get
+        name: a write becomes readable once applied
+        status: pass
+        steps:
+          - when: a client puts greeting=hello and it is applied
+            status: pass
+            duration: 340ms
+            then:
+              - text: the put is acknowledged
+                status: pass
+              - text: get returns hello
+                status: pass
+```
+
+`status` is `pass`, `fail` or `skip`; a failed step carries `error` with the
+test's failure messages, and a scenario whose background failed carries the
+background's message.
 
 ## Environment
 

@@ -1,6 +1,10 @@
 # Proposal: Go SDK for acceptance tests
 
-Status: proposal, nothing implemented.
+Status: implemented. The SDK is the root package, the report is
+`signet report`, and `examples/` is a module that uses it. The reference for
+the current API is the README's Go SDK section; this document keeps the
+reasoning. Changes made while implementing are listed under
+[Implementation notes](#implementation-notes).
 
 ## Why
 
@@ -121,6 +125,7 @@ func (r *Result) OK() *Result
 func (r *Result) Exit(code int) *Result
 func (r *Result) StdoutContains(s string) *Result
 func (r *Result) StderrContains(s string) *Result
+func (r *Result) In(t testing.TB) *Result // checks report to another step's t
 func JSON[T any](r *Result) T
 
 // Service builder (process starts in Start and stops in t.Cleanup)
@@ -130,12 +135,15 @@ func (s *ServiceBuilder) ReadyHTTP(url string, status int) *ServiceBuilder
 func (s *ServiceBuilder) ReadyLog(substring string) *ServiceBuilder
 func (s *ServiceBuilder) ReadyTimeout(d time.Duration) *ServiceBuilder
 func (s *ServiceBuilder) Start() *Svc
+func (s *Svc) Name() string
+func (s *Svc) Log() string
+func (s *Svc) Stop()
 
 // Structure
 // One Feature per test function.
 func Feature(t *testing.T, name, description string, body func(f *F))
 func (f *F) BackgroundOnce(text string, fn func(t testing.TB))
-func (f *F) Background(text string, fn func(t *testing.T))
+func (f *F) Background(text string, fn func(t testing.TB))
 func (f *F) Scenario(id, name string, body func(s *Scenario))
 
 func (s *Scenario) Given(text string, fn func(t *testing.T))
@@ -162,8 +170,9 @@ How it maps onto `testing`:
     scenario's goroutine makes `testing` report "subtest may have called
     FailNow on a parent test" instead of the cause.
   - `Background` runs inside each scenario's `t.Run(id)` before its steps,
-    receiving that scenario's `*testing.T` when per-scenario isolation is
-    needed.
+    as a subtest of the scenario. Its `fn` receives a `testing.TB` whose
+    resources belong to the scenario, the same way `BackgroundOnce` resources
+    belong to the feature.
 - A `Given` or `When` is a subtest of the scenario; each `Then` on a `Block`
   is a subtest of its `When`. The keyword and text are attributes.
 
@@ -286,31 +295,36 @@ registered. Both commands therefore produce the exact same document tree, with
 `status: skip` in list mode:
 
 ```yaml
-feature: Scheduling
-description: A timer firing is a channel fact that ingress routes into a scheduled conversation.
-background:
-  - text: a running service with a timer job named reminder
-    scope: feature
-scenarios:
-  - id: scheduling-firing-roundtrip
-    name: one timer firing becomes one routed scheduled conversation
+features:
+  - package: example.com/app/acceptance
+    test: TestScheduling
+    feature: Scheduling
+    description: A timer firing is a channel fact that ingress routes into a scheduled conversation.
     status: pass
-    steps:
-      - when: the timer fires for job reminder and the conversation settles
+    background:
+      - text: a running service with a timer job named reminder
+        scope: feature
         status: pass
-        then:
-          - text: the conversation finishes without error or cancellation
+    scenarios:
+      - id: scheduling-firing-roundtrip
+        name: one timer firing becomes one routed scheduled conversation
+        status: pass
+        steps:
+          - when: the timer fires for job reminder and the conversation settles
             status: pass
-          - text: the firing is recorded once on the scheduler channel
-            status: pass
-          - text: ingress routes the message once
-            status: pass
-          - text: the agent replies SCHEDULED_OK once on the firing thread
-            status: pass
-          - text: the runner channel receives nothing for the thread
-            status: pass
-          - text: the session is listed with trigger scheduler
-            status: pass
+            then:
+              - text: the conversation finishes without error or cancellation
+                status: pass
+              - text: the firing is recorded once on the scheduler channel
+                status: pass
+              - text: ingress routes the message once
+                status: pass
+              - text: the agent replies SCHEDULED_OK once on the firing thread
+                status: pass
+              - text: the runner channel receives nothing for the thread
+                status: pass
+              - text: the session is listed with trigger scheduler
+                status: pass
 ```
 
 The document contains only the text written in `Feature`, `BackgroundOnce` /
@@ -399,6 +413,36 @@ in `internal/proc`.
 - **Payload artifacts.** `Command` stdout/stderr and `Svc` logs are dumped
   automatically on `t.Failed()`, while project-specific HTTP/API helpers should
   write fetched payloads into `t.ArtifactDir()` or log them on failure.
+
+## Implementation notes
+
+What changed against the design above while building it:
+
+- **`Background` receives `testing.TB`, not `*testing.T`.** Every background
+  runs as its own subtest, so with the subtest's `t` a service it started was
+  stopped by `t.Cleanup` before the scenario's steps ran. Both background
+  kinds now get a `testing.TB` whose `Cleanup`, `TempDir`, `Setenv`, `Chdir`,
+  `Context` and `ArtifactDir` belong to their scope; failures still go to the
+  background step.
+- **`Result.In(t)`.** A `Then` that checks the result of its `When` would
+  otherwise call `Fatal` on the `When`'s `t` from another goroutine. `In`
+  rebinds the checks to the `Then`'s `t`.
+- **The report is one document with a `features` list**, each entry carrying
+  `package` and `test`, so one stream from many packages is one file.
+  Backgrounds carry `status` and `error`; a scenario whose background failed
+  carries the message in its own `error`.
+- **`signet report` exits 1** when a feature or package failed, so
+  `go test -json | signet report` fails a CI step like `go test` would.
+- **Commands default to a 1 minute timeout** (`Timeout(0)` leaves only the
+  test deadline) and run in their own process group. A failing test logs its
+  last five commands with their output; services log their output when the
+  test that owns them failed.
+- **Polling inside `require.EventuallyWithT`.** testify runs the condition in
+  another goroutine, so `Result` checks (which call `Fatal`) must not be used
+  there; read the `Result` fields, or poll an HTTP endpoint with `assert`
+  against the `CollectT`, as `examples/acceptance/kv_test.go` does. This is
+  the same gap as the fail-fast question above, and a `signet.Await` would
+  close both.
 
 ## Prior art
 

@@ -16,6 +16,7 @@
   - `signet validate <path>...`
   - `signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]`
   - `signet cases <path>... [--case <id>|--id <id>] [--checks]`
+  - `signet report [<file>] [--format yaml|cases]`
   - `signet completion zsh`
 - Build/service lifecycle lives in `cmd/signet/service.go` on top of
   `internal/proc` (process groups, start, readiness polling, stop). Keep `runFile` as the orchestrator that
@@ -59,9 +60,26 @@
 - Update `README.md` with every new public feature, CLI shape change, YAML
   field, or output contract that users need to understand.
 
+## Go SDK
+
+- The root package is stdlib only: `go list -deps .` must show no module
+  outside the standard library besides `internal/*`. YAML rendering lives in
+  `internal/report`, used only by the CLI.
+- Attribute keys shared by the SDK and `signet report` are in
+  `internal/attrs`; change both sides together.
+- `testdata/sdk` holds fixture features (some fail on purpose). Root tests
+  drive them through `go test -json`. `testdata/report/*.jsonl` are recorded
+  streams of that package; after changing the fixtures, re-record them
+  (commands in `internal/report/report_test.go`), refresh goldens with
+  `go test ./internal/report -update`, and update counts in `acceptance.yaml`.
+- `examples/` is a separate module (replace → `..`) that tests its own `kv`
+  binary with the SDK. `make examples` runs it; `acceptance.yaml` checks its
+  list mode and a full run through `signet report`.
+
 ## Verification
 
-- Run `go test ./...` for compile-level coverage.
+- Run `go test ./...` for compile-level coverage, and `make examples` after
+  SDK changes.
 - Run `make acceptance` before considering CLI changes complete. It rebuilds
   `./bin/signet` and runs `acceptance.yaml`.
 - Run `go install ./cmd/signet` when the user needs the shell-visible `signet` binary
