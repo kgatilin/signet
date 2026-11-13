@@ -54,15 +54,17 @@ that property for tests written in Go.
 
 A test is ordinary Go code under `go test`. signet adds three things:
 
-1. **A description structure**: Feature → Background → Scenario → `When`
-   blocks, each with its `Then` checks. Every level carries a sentence
-   written for a reader.
-2. **Fixtures**: the subject binary, background services, a free port.
+1. **A description structure**: Feature → Background / BackgroundOnce →
+   Scenario → `Given` / `When` / `Then`. Every level carries a sentence written
+   for a reader.
+2. **Fixtures**: a `Subject` value (lazy module-root build, command runner,
+   background services) and `FreePort`.
 3. **A report command** that turns the `go test -json` stream into a document.
 
-The scenario body only registers steps. All work is inside the step closures.
-The same code therefore serves two modes: a run, and a listing that produces
-the document without executing anything.
+The feature and scenario bodies only register steps; all work happens inside
+the step closures. The same code therefore serves two modes: a normal run, and
+a listing (`SIGNET_LIST=1`) that produces the document without executing
+anything or building the binary.
 
 Assertions are not part of signet. Step closures receive `*testing.T`, so
 testify or plain `if` works.
@@ -73,7 +75,7 @@ testify or plain `if` works.
 |---|---|
 | Named cases and steps with status and duration | `t.Run`; nested subtests appear in `go test -json` |
 | Machine-readable description fields | `t.Attr(key, value)`, emitted as `attr` events in `-json` |
-| Setup once per process | `TestMain`, `sync.OnceValue` |
+| Lazy build once per process | `sync.OnceValues` |
 | Temp files, teardown | `t.TempDir`, `t.Cleanup`, `t.Setenv`, `t.Context` |
 | Files kept from a run | `t.ArtifactDir()` with `-artifacts` |
 | Free port | `net.Listen("127.0.0.1:0")` |
@@ -85,56 +87,104 @@ testify or plain `if` works.
 | Selecting one case | `go test -run 'TestX/case-id'` |
 
 What signet has to provide: background service lifecycle (start, readiness,
-process-group stop, log on failure; already in `service.go`), a `Result` over
-`exec`, binary resolution across packages, the BDD structure, and the report
-command.
+process-group stop, log dump on failure), a `Command` / `Result` builder over
+`exec`, module-root subject resolution across packages, the BDD structure, and
+the report command.
 
 ## API
 
 ```go
 package signet
 
-// Main builds the subject once per test process, then runs the tests.
-// With SIGNET_BINARY set, nothing is built.
-func Main(m *testing.M, opts ...Option)
-func Build(shell string) Option
+// Subject binds a build command and binary path, both resolved from the
+// nearest module root (walking up to go.mod). Built lazily once per test
+// process on first use, or resolved directly from SIGNET_BINARY.
+func Subject(buildShell, binaryPath string) *Subj
+func (b *Subj) Path(t testing.TB) string
+func (b *Subj) Run(t testing.TB, args ...string) *Result // shortcut for b.Cmd(t, args...).Run()
+func (b *Subj) Cmd(t testing.TB, args ...string) *Command
+func (b *Subj) Service(t testing.TB, name string, args ...string) *ServiceBuilder
 
-func Feature(t *testing.T, name, description string) *F
+// Arbitrary commands & services (not bound to a Subject)
+func Cmd(t testing.TB, name string, args ...string) *Command
+func Service(t testing.TB, name string, cmd string, args ...string) *ServiceBuilder
+func FreePort(t testing.TB) int
+
+// Command builder & Result checks
+func (c *Command) Env(kv ...string) *Command
+func (c *Command) Dir(dir string) *Command
+func (c *Command) Stdin(in string) *Command
+func (c *Command) Timeout(d time.Duration) *Command
+func (c *Command) Run() *Result
+
+func (r *Result) OK() *Result
+func (r *Result) Exit(code int) *Result
+func (r *Result) StdoutContains(s string) *Result
+func (r *Result) StderrContains(s string) *Result
+func JSON[T any](r *Result) T
+
+// Service builder (process starts in Start and stops in t.Cleanup)
+func (s *ServiceBuilder) Env(kv ...string) *ServiceBuilder
+func (s *ServiceBuilder) Dir(dir string) *ServiceBuilder
+func (s *ServiceBuilder) ReadyHTTP(url string, status int) *ServiceBuilder
+func (s *ServiceBuilder) ReadyLog(substring string) *ServiceBuilder
+func (s *ServiceBuilder) ReadyTimeout(d time.Duration) *ServiceBuilder
+func (s *ServiceBuilder) Start() *Svc
+
+// Structure
+// One Feature per test function.
+func Feature(t *testing.T, name, description string, body func(f *F))
+func (f *F) BackgroundOnce(text string, fn func(t testing.TB))
 func (f *F) Background(text string, fn func(t *testing.T))
 func (f *F) Scenario(id, name string, body func(s *Scenario))
 
 func (s *Scenario) Given(text string, fn func(t *testing.T))
 func (s *Scenario) When(text string, fn func(t *testing.T)) *Block
+func (s *Scenario) Then(text string, fn func(t *testing.T)) // for scenarios with no When
 func (b *Block) Then(text string, fn func(t *testing.T)) *Block
-
-// Fixtures
-func Binary(t testing.TB) string
-func Run(t testing.TB, args ...string) *Result
-func Service(t testing.TB, name string, args ...string) *Svc // stopped in t.Cleanup
-func (s *Svc) ReadyHTTP(url string, status int) *Svc
-func (s *Svc) ReadyLog(substring string) *Svc
-func FreePort(t testing.TB) int
-
-// Result
-func (r *Result) OK() *Result
-func (r *Result) Exit(code int) *Result
-func (r *Result) StderrContains(s string) *Result
-func JSON[T any](r *Result) T
 ```
 
 How it maps onto `testing`:
 
-- A scenario is `t.Run(id)` with the name as an attribute.
-- A `When` is a subtest of the scenario; each `Then` is a subtest of its
-  `When`. The keyword and the text are attributes.
-- `Background` runs once before the first scenario of the feature.
+- `Feature` emits feature metadata via `t.Attr`, runs `body(f)` to collect
+  `BackgroundOnce`, `Background`, and `Scenario` registrations, then executes
+  scenarios.
+- Each scenario runs inside `t.Run(id)` with its human-readable name as an
+  attribute.
+- Two explicit background scopes cover shared vs isolated fixtures:
+  - `BackgroundOnce` runs lazily once, inside the `t.Run(id)` of the first
+    scenario that actually executes, so a `-run` filter that selects no
+    scenario starts nothing and `go test -run TestX/case-id` still gets its
+    fixture. Its `fn` receives a `testing.TB` that wraps the feature's `t`:
+    `Cleanup` registers on the feature, so services live until the feature
+    ends, and `FailNow` is intercepted. The signature differs from steps
+    (`*testing.T`) for that reason: a raw feature `t` failing inside a
+    scenario's goroutine makes `testing` report "subtest may have called
+    FailNow on a parent test" instead of the cause.
+  - `Background` runs inside each scenario's `t.Run(id)` before its steps,
+    receiving that scenario's `*testing.T` when per-scenario isolation is
+    needed.
+- A `Given` or `When` is a subtest of the scenario; each `Then` on a `Block`
+  is a subtest of its `When`. The keyword and text are attributes.
 
 Execution rules:
 
-- A failed `Given` or `When` skips its `Then` checks and every later block
-  in the scenario.
+- Action and waiting belong in `Given` / `When` (reaching a settled state and
+  populating scenario variables). `Then` closures assert independent facts over
+  that settled state. (Trade-off: if `When` times out waiting for the settled
+  state, its `Then` checks are skipped rather than individually evaluated.)
+- If `BackgroundOnce` fails, the scenario that triggered it fails with the
+  background's message, and every later scenario is registered and skipped,
+  so the report keeps the full scenario list.
+- A test function holds one `Feature`: feature metadata is written as
+  attributes on that function's `t`, and a second call would mix them.
+- A failed `Background`, `Given`, or `When` skips its `Then` checks and every
+  later block in the scenario.
 - A failed `Then` does not stop the other `Then` checks of the same block,
-  so the report shows which facts hold. Later `When` blocks are skipped.
+  so the report shows all facts that hold or fail. Later `When` blocks in the
+  scenario are skipped.
+- On `t.Failed()`, `Command` stdout/stderr and `Svc` logs are dumped
+  automatically via `t.Cleanup`.
 
 ## Example
 
@@ -143,98 +193,110 @@ project's own helper packages (a client for the record log and typed
 selections over it); they are not part of signet.
 
 ```go
-func TestMain(m *testing.M) { signet.Main(m, signet.Build("make build")) }
+var app = signet.Subject("make build", "./bin/app")
 
 func TestScheduling(t *testing.T) {
-    f := signet.Feature(t, "Scheduling",
-        "A timer firing is a channel fact that ingress routes into a scheduled conversation.")
+    signet.Feature(t, "Scheduling",
+        "A timer firing is a channel fact that ingress routes into a scheduled conversation.",
+        func(f *signet.F) {
+            var log *apptest.Log
 
-    var log *apptest.Log
-    f.Background("a running service with a timer job named reminder", func(t *testing.T) {
-        log = apptest.Start(t, serviceConfig).Log()
-    })
-
-    f.Scenario("scheduling-firing-roundtrip",
-        "one timer firing becomes one routed scheduled conversation", func(s *signet.Scenario) {
-        var (
-            fired    events.TimerFired
-            received events.Record[events.MessageReceived]
-            session  string
-        )
-
-        s.When("the timer fires for job reminder", func(t *testing.T) {
-            require.EventuallyWithT(t, func(c *assert.CollectT) {
-                fired = events.First[events.TimerFired](c, log.Records(c, "channel.scheduler.>"),
-                    func(e events.TimerFired) bool { return e.Job == "reminder" })
-            }, 50*time.Second, 500*time.Millisecond)
-        }).
-            Then("the conversation finishes without error or cancellation", func(t *testing.T) {
-                require.EventuallyWithT(t, func(c *assert.CollectT) {
-                    received = events.OneRecord[events.MessageReceived](c, log.Records(c, "channel.scheduler.>"), onThread(fired.Thread))
-                    session = events.Last[events.SessionBound](c, log.Records(c, "ingress.scheduler.>"), onThread(fired.Thread)).Session
-                    done := events.One[events.MessageProcessed](c, log.Session(c, session), forMessage(received.ID))
-                    assert.Empty(c, done.Error)
-                    assert.False(c, done.Cancelled)
-                }, 50*time.Second, 500*time.Millisecond)
-            }).
-            Then("the firing is recorded once on the scheduler channel", func(t *testing.T) {
-                events.One[events.TimerFired](t, log.Records(t, "channel.scheduler.>"), onThread(fired.Thread))
-            }).
-            Then("ingress routes the message once", func(t *testing.T) {
-                events.One[events.MessageRouted](t, log.Records(t, "ingress.scheduler.>"), onThread(fired.Thread))
-            }).
-            Then("the agent replies SCHEDULED_OK once on the firing thread", func(t *testing.T) {
-                events.One[events.MessageSent](t, log.Records(t, "channel.scheduler.>"), func(e events.MessageSent) bool {
-                    return e.Thread == fired.Thread && e.ReplyTo == received.ID && e.Content == "SCHEDULED_OK"
-                })
-            }).
-            Then("the runner channel receives nothing for the thread", func(t *testing.T) {
-                events.None[events.MessageReceived](t, log.Records(t, "channel.runner.>"), onThread(fired.Thread))
-            }).
-            Then("the session is listed with trigger scheduler", func(t *testing.T) {
-                require.Contains(t, log.Sessions(t),
-                    apptest.Session{ID: session, Trigger: "scheduler", Thread: fired.Thread})
+            f.BackgroundOnce("a running service with a timer job named reminder", func(t testing.TB) {
+                log = apptest.Start(t, app, serviceConfig).Log()
             })
-    })
 
-    f.Scenario("scheduling-cancel-pending",
-        "operator cancellation closes a conversation waiting on an offline worker", func(s *signet.Scenario) {
-        var thread string
+            f.Scenario("scheduling-firing-roundtrip",
+                "one timer firing becomes one routed scheduled conversation", func(s *signet.Scenario) {
+                var (
+                    fired    events.TimerFired
+                    received events.Record[events.MessageReceived]
+                    done     events.MessageProcessed
+                    session  string
+                )
 
-        s.When("the timer fires for job slow-reminder", func(t *testing.T) { /* sets thread */ }).
-            Then("the turn is pending on the offline worker", func(t *testing.T) { /* ... */ })
+                s.When("the timer fires for job reminder and the conversation settles", func(t *testing.T) {
+                    require.EventuallyWithT(t, func(c *assert.CollectT) {
+                        fired = events.First[events.TimerFired](c, log.Records(c, "channel.scheduler.>"),
+                            func(e events.TimerFired) bool { return e.Job == "reminder" })
+                        received = events.OneRecord[events.MessageReceived](c, log.Records(c, "channel.scheduler.>"), onThread(fired.Thread))
+                        session = events.Last[events.SessionBound](c, log.Records(c, "ingress.scheduler.>"), onThread(fired.Thread)).Session
+                        done = events.One[events.MessageProcessed](c, log.Session(c, session), forMessage(received.ID))
+                    }, 50*time.Second, 500*time.Millisecond)
+                }).
+                    Then("the conversation finishes without error or cancellation", func(t *testing.T) {
+                        assert.Empty(t, done.Error)
+                        assert.False(t, done.Cancelled)
+                    }).
+                    Then("the firing is recorded once on the scheduler channel", func(t *testing.T) {
+                        events.One[events.TimerFired](t, log.Records(t, "channel.scheduler.>"), onThread(fired.Thread))
+                    }).
+                    Then("ingress routes the message once", func(t *testing.T) {
+                        events.One[events.MessageRouted](t, log.Records(t, "ingress.scheduler.>"), onThread(fired.Thread))
+                    }).
+                    Then("the agent replies SCHEDULED_OK once on the firing thread", func(t *testing.T) {
+                        events.One[events.MessageSent](t, log.Records(t, "channel.scheduler.>"), func(e events.MessageSent) bool {
+                            return e.Thread == fired.Thread && e.ReplyTo == received.ID && e.Content == "SCHEDULED_OK"
+                        })
+                    }).
+                    Then("the runner channel receives nothing for the thread", func(t *testing.T) {
+                        events.None[events.MessageReceived](t, log.Records(t, "channel.runner.>"), onThread(fired.Thread))
+                    }).
+                    Then("the session is listed with trigger scheduler", func(t *testing.T) {
+                        require.Contains(t, log.Sessions(t),
+                            apptest.Session{ID: session, Trigger: "scheduler", Thread: fired.Thread})
+                    })
+            })
 
-        s.When("the operator requests cancellation of the thread", func(t *testing.T) {
-            signet.Run(t, "send", "cancel", "--thread", thread).OK()
-        }).
-            Then("the message is closed as cancelled", func(t *testing.T) { /* ... */ }).
-            Then("progress reports cancelled", func(t *testing.T) { /* ... */ }).
-            Then("ingress routes the cancel once", func(t *testing.T) { /* ... */ })
-    })
+            f.Scenario("scheduling-cancel-pending",
+                "operator cancellation closes a conversation waiting on an offline worker", func(s *signet.Scenario) {
+                var thread string
+
+                s.When("the timer fires for job slow-reminder", func(t *testing.T) { /* sets thread */ }).
+                    Then("the turn is pending on the offline worker", func(t *testing.T) { /* ... */ })
+
+                s.When("the operator requests cancellation of the thread", func(t *testing.T) {
+                    app.Run(t, "send", "cancel", "--thread", thread).OK()
+                }).
+                    Then("the message is closed as cancelled", func(t *testing.T) { /* ... */ }).
+                    Then("progress reports cancelled", func(t *testing.T) { /* ... */ }).
+                    Then("ingress routes the cancel once", func(t *testing.T) { /* ... */ })
+            })
+        })
 }
 ```
 
 ## Exported document
 
-```
-go test ./acceptance/... -json -count=1 | signet report > report.yaml   # after a run
-go test ./acceptance/... -json -signet.list | signet report             # without running
+```sh
+go test ./acceptance/... -json -count=1 | signet report > report.yaml        # after a run
+SIGNET_LIST=1 go test ./acceptance/... -json -count=1 | signet report        # without running
 ```
 
-With `-signet.list` every step is registered and skipped; `Background` and
-the step closures do not execute. Both commands produce the same document,
-with `status: skip` in the second case.
+`SIGNET_LIST=1` is an environment variable rather than a custom `go test` flag
+so that running `SIGNET_LIST=1 go test ./...` across mixed unit and acceptance
+packages never fails with `flag provided but not defined` in packages that do
+not import `signet`.
+
+With `SIGNET_LIST=1`, `BackgroundOnce`, `Background`, `Subject` builds, and
+step closures do not execute. Scenarios and `When` blocks still enter their
+`t.Run` subtests and emit `t.Attr` metadata so child subtests are registered;
+leaf steps emit their attributes and call `t.SkipNow()`, followed by
+`t.SkipNow()` at the end of each parent block/scenario after its children have
+registered. Both commands therefore produce the exact same document tree, with
+`status: skip` in list mode:
 
 ```yaml
 feature: Scheduling
 description: A timer firing is a channel fact that ingress routes into a scheduled conversation.
-background: a running service with a timer job named reminder
+background:
+  - text: a running service with a timer job named reminder
+    scope: feature
 scenarios:
   - id: scheduling-firing-roundtrip
     name: one timer firing becomes one routed scheduled conversation
     status: pass
     steps:
-      - when: the timer fires for job reminder
+      - when: the timer fires for job reminder and the conversation settles
         status: pass
         then:
           - text: the conversation finishes without error or cancellation
@@ -251,55 +313,92 @@ scenarios:
             status: pass
 ```
 
-The document contains only the text written in `Feature`, `Background`,
-`Scenario`, `Given`, `When` and `Then`, plus status, duration and the failure
-message. Commands, JSON and assertions stay in the code.
+The document contains only the text written in `Feature`, `BackgroundOnce` /
+`Background`, `Scenario`, `Given`, `When` and `Then`, plus status, duration and
+any failure message. Commands, JSON and assertions stay in the code.
+`background` is a list: `scope: feature` for `BackgroundOnce`, `scope:
+scenario` for `Background`.
 
-## Build
+`signet report --format cases` renders the `CASE id=<id> name="<name>"` table
+from the same `-json` stream so scripts get a consistent case inventory format
+across YAML specs and Go suites.
 
-`signet.Main` runs the build once per test process. `go test` starts one
-process per package, so a suite spread over several packages sets
-`SIGNET_BINARY` after building once:
+## Build and working directory
+
+`go test` runs each test binary with its working directory set to that test
+package's directory (e.g. `acceptance/scheduling`), not the repository root.
+`signet.Subject(buildShell, binaryPath)` walks up from the current directory to
+the nearest `go.mod` to find the module root:
+
+- `buildShell` executes with `cmd.Dir` set to the module root.
+- Relative `binaryPath` values (such as `./bin/app`) resolve against the module
+  root into an absolute path.
+- Individual `app.Cmd` / `app.Service` calls continue to run in the test's
+  working directory unless overridden with `.Dir(...)`.
+
+`Subject` builds lazily via `sync.OnceValues` on the first call to `Path`,
+`Run`, `Cmd`, or `Service`:
+
+- During `go test ./acceptance`, the binary is built once on first use and
+  reused across scenarios in that package.
+- In `SIGNET_LIST=1` mode, step closures never run, so nothing is built.
+- When `SIGNET_BINARY` is set in the environment, `Subject` skips `buildShell`
+  and uses that path. It must be absolute: the working directory differs per
+  test package, so a relative value would point somewhere else in each of
+  them, and `Subject` fails the test on one. Because `go test` starts one
+  process per package, a multi-package suite builds once in `make`:
 
 ```make
 acceptance: build
 	SIGNET_BINARY=$(CURDIR)/bin/app go test ./acceptance/... -count=1
 ```
 
-`-count=1` is required: `go test` caches results and does not track a
-binary the test executes.
+`-count=1` is required: `go test` caches results and does not track external
+binaries executed by tests.
+
+## Package layout
+
+The SDK lives at the module root (`package signet`, imported as
+`github.com/kgatilin/signet`, stdlib-only), and the CLI moves to `cmd/signet`
+(`go install github.com/kgatilin/signet/cmd/signet@latest`). The import path is
+written in every test file, whereas installing the CLI happens once. Process
+handling and service readiness shared between the CLI runner and the SDK live
+in `internal/proc`.
 
 ## What this design does not do
 
+- The module root is the nearest `go.mod`. When acceptance tests live in
+  their own module (to keep test dependencies out of the main `go.mod`),
+  that is the test module, not the repository root; such a suite sets
+  `SIGNET_BINARY` or passes absolute paths to `Subject`.
 - The text and number of steps cannot depend on the result of an earlier
   step. A loop over constants works; a loop over a server response does not.
-- Code in a scenario body outside the step closures runs at registration,
-  including in list mode. Keeping the body free of side effects is a
+- Code in a feature or scenario body outside the step closures runs at
+  registration, including in `SIGNET_LIST=1` mode. Keeping registration bodies
+  free of side effects (only `var` declarations and step calls) is a
   convention, not something the API enforces.
 - Executed commands are not in the document. Adding them means `Result`
   writes them as attributes, and the document stops being description only.
-- The BDD document has a different shape from `acceptance.yaml` (no `run`
-  or `expect`). A UI needs a second reader, or the YAML specs need a
-  converter into this shape.
+- The BDD report YAML has a different shape (`when` / `then`) from
+  `acceptance.yaml` (`run` / `expect`), though scenario IDs and names map
+  1-to-1 onto `CASE id=<id> name="<name>"` via `signet report --format cases`.
+  A UI either reads this report schema or converts YAML specs into it.
 - The report is not runnable: `signet run` cannot replay it.
-- No Gherkin output. It can be a second format of `signet report`.
-- `kind: write` and the confirmation prompt have no equivalent under
-  `go test`.
+- No Gherkin `.feature` output yet; it can be added as `--format gherkin` on
+  `signet report`.
+- `kind: write` and the interactive confirmation prompt have no equivalent
+  under `go test`.
 
 ## Open decisions
 
 - **Fail-fast waiting.** `EventuallyWithT` cannot stop early on a condition
-  that makes success impossible (the conversation was cancelled while the
+  that makes success impossible (e.g., the conversation was cancelled while the
   test waits for it to finish). The verdict is the same, reached only at the
-  timeout. A `signet.Await` with a fatal condition would fix it.
-- **Order among `Then` checks.** In the example the first `Then` waits and
-  the rest read a settled log; the API does not show that dependency.
-  `When(...).Within(d)` could retry every `Then` until it passes, but
-  absence checks then pass immediately and prove nothing, so they would need
-  their own step kind.
-- **Failure diagnostics.** The shell version dumps every fetched payload.
-  Project helpers should write what they fetched into `t.ArtifactDir()` or
-  log it on failure; signet could offer a hook for that on `Result`.
+  timeout. A `signet.Await` helper with a terminal/fatal predicate could
+  short-circuit immediately.
+- **Payload artifacts.** `Command` stdout/stderr and `Svc` logs are dumped
+  automatically on `t.Failed()`, while project-specific HTTP/API helpers should
+  write fetched payloads into `t.ArtifactDir()` or log them on failure.
 
 ## Prior art
 
@@ -313,10 +412,16 @@ binary the test executes.
 
 ## Iterations
 
-1. Move the service lifecycle, process handling and setup files out of
-   `package main` into an importable package; the CLI becomes `cmd/signet`.
-2. Fixtures: `Main`, `Build`, `Binary`, `Run`, `Result`, `Service`, `FreePort`.
-3. Structure: `Feature`, `Background`, `Scenario`, `Given`, `When`, `Then`
-   over `t.Run` and `t.Attr`, with the skip rules above.
-4. `signet report` and `-signet.list`.
-5. Rewrite one existing YAML suite as a Go feature and compare the documents.
+1. Move the CLI into `cmd/signet` and extract process-group handling and
+   service readiness/lifecycle into `internal/proc`, freeing the root
+   `package signet` for the stdlib-only SDK.
+2. Implement `Subject` (with `go.mod` root resolution and `SIGNET_BINARY`),
+   `Command`/`Result`, `ServiceBuilder`/`Svc` (with auto-dump on `t.Failed()`),
+   and `FreePort`.
+3. Implement structure (`Feature`, `BackgroundOnce`, `Background`, `Scenario`,
+   `Given`, `When`, `Then`) over `t.Run` and `t.Attr`, with `SIGNET_LIST=1`
+   and the skip rules above.
+4. Add `signet report` (`yaml` default + `--format cases`) consuming
+   `go test -json`.
+5. Rewrite one existing complex YAML suite as a Go feature and compare the
+   resulting documents and failure diagnostics.
