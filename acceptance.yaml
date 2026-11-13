@@ -27,6 +27,7 @@ cases:
               - "signet run <path>..."
               - "signet cases <path>... [--case <id>|--id <id>]"
               - "signet cases <path>... [--case <id>|--id <id>] --checks"
+              - "signet report [<file>] [--format yaml|cases]"
               - "signet completion zsh"
               - "--yes"
               - "--verbose"
@@ -853,3 +854,90 @@ cases:
               - "10 checks"
             notContains:
               - "panic"
+
+  - id: report-run-document
+    name: report turns a go test -json run into a feature document and fails on failed features
+    steps:
+      - name: render a recorded run with failures
+        run:
+          args: ["report", "testdata/report/run.jsonl"]
+        expect:
+          exitCode: 1
+          stdout:
+            orderedContains:
+              - "features:"
+              - "feature: Passing feature"
+              - "- given: n is one"
+              - "- when: n doubles"
+              - "- text: n is two"
+              - "feature: Step failures"
+              - "- when: the action fails"
+              - "status: fail"
+              - "action broke"
+              - "feature: Broken background"
+              - "scope: feature"
+              - "service refused to start"
+            notContains:
+              - "panic"
+          stderr:
+            contains:
+              - "failed packages: github.com/kgatilin/signet/testdata/sdk"
+
+  - id: report-list-stdin
+    name: report reads a list-mode stream from stdin and exits 0
+    steps:
+      - name: render a recorded SIGNET_LIST=1 stream
+        run:
+          shell: ./bin/signet report < testdata/report/list.jsonl
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "feature: Passing feature"
+              - "status: skip"
+            notContains:
+              - "status: pass"
+              - "status: fail"
+
+  - id: report-cases-format
+    name: report --format cases prints the signet cases row format
+    steps:
+      - name: case inventory of a recorded stream
+        run:
+          args: ["report", "testdata/report/list.jsonl", "--format", "cases"]
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature"
+              - 'CASE id=one name="every step kind passes" (5 steps)'
+              - 'CASE id=two name="the shared background ran once" (4 steps)'
+              - "GROUP github.com/kgatilin/signet/testdata/sdk TestStepFailures Step failures"
+              - "4 groups, 10 cases, 27 steps"
+
+  - id: report-invalid-format
+    name: report rejects an unknown format
+    steps:
+      - name: unknown format
+        run:
+          args: ["report", "testdata/report/list.jsonl", "--format", "html"]
+        expect:
+          exitCode: 2
+          stderr:
+            contains:
+              - 'unknown format "html"'
+
+  - id: report-sdk-list-live
+    name: SIGNET_LIST=1 go test lists SDK features without running their steps
+    steps:
+      - name: list the SDK fixture features live
+        run:
+          timeout: 180s
+          shell: SIGNET_LIST=1 go test -json -count=1 ./testdata/sdk | ./bin/signet report --format cases
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature"
+              - "GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundFails Broken per-scenario background"
+              - "4 groups, 10 cases, 27 steps"

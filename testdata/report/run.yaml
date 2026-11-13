@@ -1,0 +1,150 @@
+features:
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestPassing
+    feature: Passing feature
+    description: |-
+      First line.
+      Second line.
+    status: pass
+    background:
+      - text: a shared file
+        scope: feature
+        status: pass
+      - text: a fresh counter
+        scope: scenario
+        status: pass
+    scenarios:
+      - id: one
+        name: every step kind passes
+        status: pass
+        steps:
+          - given: n is one
+            status: pass
+          - when: n doubles
+            status: pass
+            then:
+              - text: n is two
+                status: pass
+              - text: n is even
+                status: pass
+          - then: the shared file exists
+            status: pass
+      - id: two
+        name: the shared background ran once
+        status: pass
+        steps:
+          - when: nothing happens
+            status: pass
+            then:
+              - text: the shared file still exists
+                status: pass
+          - when: it is checked again
+            status: pass
+            then:
+              - text: the background ran once
+                status: pass
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestStepFailures
+    feature: Step failures
+    status: fail
+    scenarios:
+      - id: when-fails
+        name: a failed action skips its checks and later actions
+        status: fail
+        steps:
+          - when: the action fails
+            status: fail
+            error: |-
+              fixture_test.go:85: action broke
+                  second line
+            then:
+              - text: its check
+                status: skip
+          - when: a later action
+            status: skip
+            then:
+              - text: a later check
+                status: skip
+      - id: then-fails
+        name: a failed check keeps its siblings and skips later actions
+        status: fail
+        steps:
+          - when: the action passes
+            status: fail
+            then:
+              - text: the first check fails
+                status: fail
+                error: 'fixture_test.go:93: first check broke'
+              - text: the second check runs
+                status: pass
+          - when: a later action
+            status: skip
+      - id: given-fails
+        name: a failed precondition skips everything after it
+        status: fail
+        steps:
+          - given: a broken precondition
+            status: fail
+            error: 'fixture_test.go:99: precondition broke'
+          - then: a direct check
+            status: skip
+          - when: an action
+            status: skip
+      - id: skip-in-when
+        name: a skipped action skips its checks
+        status: pass
+        steps:
+          - when: the action skips
+            status: skip
+            then:
+              - text: its check
+                status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestBackgroundOnceFails
+    feature: Broken background
+    status: fail
+    background:
+      - text: a service that does not start
+        scope: feature
+        status: fail
+        error: 'fixture_test.go:113: service refused to start'
+    scenarios:
+      - id: first
+        name: runs the background
+        status: fail
+        error: 'background "a service that does not start" failed: fixture_test.go:113: service refused to start'
+        steps:
+          - when: an action
+            status: skip
+      - id: second
+        name: is skipped
+        status: skip
+        steps:
+          - when: an action
+            status: skip
+            then:
+              - text: a check
+                status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestBackgroundFails
+    feature: Broken per-scenario background
+    status: fail
+    background:
+      - text: a fixture that fails in one scenario
+        scope: scenario
+        status: fail
+        error: 'fixture_test.go:128: fixture broke'
+    scenarios:
+      - id: bad
+        name: its background fails
+        status: fail
+        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:128: fixture broke'
+        steps:
+          - when: an action
+            status: skip
+      - id: good
+        name: its background passes
+        status: pass
+        steps:
+          - when: an action
+            status: pass

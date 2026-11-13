@@ -1,0 +1,141 @@
+features:
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestPassing
+    feature: Passing feature
+    description: |-
+      First line.
+      Second line.
+    status: skip
+    background:
+      - text: a shared file
+        scope: feature
+        status: skip
+      - text: a fresh counter
+        scope: scenario
+        status: skip
+    scenarios:
+      - id: one
+        name: every step kind passes
+        status: skip
+        steps:
+          - given: n is one
+            status: skip
+          - when: n doubles
+            status: skip
+            then:
+              - text: n is two
+                status: skip
+              - text: n is even
+                status: skip
+          - then: the shared file exists
+            status: skip
+      - id: two
+        name: the shared background ran once
+        status: skip
+        steps:
+          - when: nothing happens
+            status: skip
+            then:
+              - text: the shared file still exists
+                status: skip
+          - when: it is checked again
+            status: skip
+            then:
+              - text: the background ran once
+                status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestStepFailures
+    feature: Step failures
+    status: skip
+    scenarios:
+      - id: when-fails
+        name: a failed action skips its checks and later actions
+        status: skip
+        steps:
+          - when: the action fails
+            status: skip
+            then:
+              - text: its check
+                status: skip
+          - when: a later action
+            status: skip
+            then:
+              - text: a later check
+                status: skip
+      - id: then-fails
+        name: a failed check keeps its siblings and skips later actions
+        status: skip
+        steps:
+          - when: the action passes
+            status: skip
+            then:
+              - text: the first check fails
+                status: skip
+              - text: the second check runs
+                status: skip
+          - when: a later action
+            status: skip
+      - id: given-fails
+        name: a failed precondition skips everything after it
+        status: skip
+        steps:
+          - given: a broken precondition
+            status: skip
+          - then: a direct check
+            status: skip
+          - when: an action
+            status: skip
+      - id: skip-in-when
+        name: a skipped action skips its checks
+        status: skip
+        steps:
+          - when: the action skips
+            status: skip
+            then:
+              - text: its check
+                status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestBackgroundOnceFails
+    feature: Broken background
+    status: skip
+    background:
+      - text: a service that does not start
+        scope: feature
+        status: skip
+    scenarios:
+      - id: first
+        name: runs the background
+        status: skip
+        steps:
+          - when: an action
+            status: skip
+      - id: second
+        name: is skipped
+        status: skip
+        steps:
+          - when: an action
+            status: skip
+            then:
+              - text: a check
+                status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestBackgroundFails
+    feature: Broken per-scenario background
+    status: skip
+    background:
+      - text: a fixture that fails in one scenario
+        scope: scenario
+        status: skip
+    scenarios:
+      - id: bad
+        name: its background fails
+        status: skip
+        steps:
+          - when: an action
+            status: skip
+      - id: good
+        name: its background passes
+        status: skip
+        steps:
+          - when: an action
+            status: skip

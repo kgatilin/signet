@@ -55,6 +55,7 @@ func newRootCommand(stdout, stderr io.Writer, stdin io.Reader) *cobra.Command {
 		newValidateCommand(stdout),
 		newRunCommand(stdout, stderr, stdin),
 		newCasesCommand(stdout),
+		newReportCommand(stdout, stderr, stdin),
 	)
 	return root
 }
@@ -144,12 +145,14 @@ func printHelp(w io.Writer) {
   signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]
   signet cases <path>... [--case <id>|--id <id>]
   signet cases <path>... [--case <id>|--id <id>] --checks
+  signet report [<file>] [--format yaml|cases]
   signet completion zsh
 
 Commands:
   validate     Validate acceptance YAML files.
   run          Run acceptance YAML files against their subject binaries.
   cases        List cases without running commands.
+  report       Turn a go test -json stream of SDK features into a document.
   completion   Generate shell completion scripts.
 
 Options:
