@@ -148,7 +148,7 @@ func TestServiceLifecycleStartsReadyAndStops(t *testing.T) {
 	}
 
 	select {
-	case <-rs.done:
+	case <-rs.process.Done():
 		t.Fatal("service exited before it was stopped")
 	default:
 	}
@@ -156,7 +156,7 @@ func TestServiceLifecycleStartsReadyAndStops(t *testing.T) {
 	stopService(rs, &stdout)
 
 	select {
-	case <-rs.done:
+	case <-rs.process.Done():
 	case <-time.After(5 * time.Second):
 		t.Fatal("service was not stopped")
 	}

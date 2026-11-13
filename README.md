@@ -12,9 +12,9 @@ directory, or use any other layout that fits the repo. `signet` discovers
 `acceptance.yaml` and `*.acceptance.yaml` recursively.
 
 ```bash
-go install github.com/kgatilin/signet@latest
+go install github.com/kgatilin/signet/cmd/signet@latest
 # or, from a clone:
-go build -o bin/signet .
+go build -o bin/signet ./cmd/signet
 ```
 
 > `signet run` executes commands described by the acceptance file, including

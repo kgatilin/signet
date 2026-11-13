@@ -2,7 +2,10 @@
 
 ## CLI Structure
 
-- `signet` uses Cobra commands in `main.go`. Do not add new manual `os.Args`
+- The repository root is the Go SDK (`package signet`, stdlib only). The CLI
+  is `cmd/signet`; process-group handling and the background process
+  lifecycle shared by both live in `internal/proc`.
+- `signet` uses Cobra commands in `cmd/signet/main.go`. Do not add new manual `os.Args`
   dispatch or hand-rolled flag parsing.
 - Keep command parsing in Cobra command builders and keep behavior in the
   existing helpers:
@@ -14,8 +17,8 @@
   - `signet run <path>... [--yes] [--verbose] [--keep-temp] [--no-build] [--binary <path>]`
   - `signet cases <path>... [--case <id>|--id <id>] [--checks]`
   - `signet completion zsh`
-- Build/service lifecycle lives in `service.go`; process-group signals are in
-  `process_unix.go`/`process_other.go`. Keep `runFile` as the orchestrator that
+- Build/service lifecycle lives in `cmd/signet/service.go` on top of
+  `internal/proc` (process groups, start, readiness polling, stop). Keep `runFile` as the orchestrator that
   calls `runBuild` then `startServices`/`stopServices` around the case loop.
 
 ## Acceptance Contracts
@@ -61,7 +64,7 @@
 - Run `go test ./...` for compile-level coverage.
 - Run `make acceptance` before considering CLI changes complete. It rebuilds
   `./bin/signet` and runs `acceptance.yaml`.
-- Run `go install .` when the user needs the shell-visible `signet` binary
+- Run `go install ./cmd/signet` when the user needs the shell-visible `signet` binary
   updated.
 
 ## Shell Completion

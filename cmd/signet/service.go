@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/kgatilin/signet/internal/proc"
 )
 
 const (
@@ -63,34 +65,12 @@ func executeShellCommand(command string, env []string, timeout time.Duration) co
 	return finishCommandResult(ctx, out.String(), errOut.String(), err)
 }
 
-// syncBuffer is a goroutine-safe buffer for capturing a background service's
-// combined output while the readiness loop scans it.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
 // runningService tracks a started background service and its lifecycle state.
 type runningService struct {
 	name        string
 	label       string
-	cmd         *exec.Cmd
-	output      *syncBuffer
+	process     *proc.Process
 	stopTimeout time.Duration
-	done        chan struct{}
-	waitErr     error
 }
 
 // startServices starts each declared service in order, waiting for each to be
@@ -120,30 +100,19 @@ func startService(service Service, setup *setupContext) (*runningService, error)
 	}
 
 	cmd := exec.Command(name, args...)
-	setProcessGroup(cmd)
 	if env := setup.commandEnv(); env != nil {
 		cmd.Env = env
 	}
-	output := &syncBuffer{}
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Start(); err != nil {
+	process, err := proc.Start(cmd)
+	if err != nil {
 		return nil, err
 	}
-
-	rs := &runningService{
+	return &runningService{
 		name:        service.Name,
 		label:       label,
-		cmd:         cmd,
-		output:      output,
+		process:     process,
 		stopTimeout: serviceStopTimeout(service),
-		done:        make(chan struct{}),
-	}
-	go func() {
-		rs.waitErr = cmd.Wait()
-		close(rs.done)
-	}()
-	return rs, nil
+	}, nil
 }
 
 func resolveServiceCommand(service Service, setup *setupContext) (name string, args []string, label string, err error) {
@@ -180,13 +149,11 @@ func waitServiceReady(rs *runningService, service Service, setup *setupContext, 
 	hasShell := strings.TrimSpace(service.Ready.Shell) != ""
 	hasLog := strings.TrimSpace(service.Ready.Log) != ""
 	if !hasShell && !hasLog {
-		select {
-		case <-rs.done:
+		if rs.process.Exited() {
 			reportServiceExit(stdout, stderr, rs)
 			return false
-		default:
-			return true
 		}
+		return true
 	}
 
 	readyShell := ""
@@ -199,29 +166,22 @@ func waitServiceReady(rs *runningService, service Service, setup *setupContext, 
 		readyShell = expanded
 	}
 
-	deadline := time.Now().Add(serviceReadyTimeout(service))
-	for {
-		select {
-		case <-rs.done:
-			reportServiceExit(stdout, stderr, rs)
-			return false
-		default:
-		}
-		if hasLog && strings.Contains(rs.output.String(), service.Ready.Log) {
+	err := rs.process.WaitReady(serviceReadyTimeout(service), readyPollInterval, func() bool {
+		if hasLog && strings.Contains(rs.process.Output.String(), service.Ready.Log) {
 			return true
 		}
-		if readyShell != "" {
-			if executeShellCommand(readyShell, setup.commandEnv(), readyProbeTimeout).exitCode == 0 {
-				return true
-			}
-		}
-		if time.Now().After(deadline) {
-			fmt.Fprintf(stdout, "%s service %s: not ready after %s\n", red("FAIL"), rs.name, serviceReadyTimeout(service))
-			printServiceOutput(stdout, rs)
-			return false
-		}
-		time.Sleep(readyPollInterval)
+		return readyShell != "" && executeShellCommand(readyShell, setup.commandEnv(), readyProbeTimeout).exitCode == 0
+	})
+	switch {
+	case errors.Is(err, proc.ErrExited):
+		reportServiceExit(stdout, stderr, rs)
+		return false
+	case err != nil:
+		fmt.Fprintf(stdout, "%s service %s: not ready after %s\n", red("FAIL"), rs.name, serviceReadyTimeout(service))
+		printServiceOutput(stdout, rs)
+		return false
 	}
+	return true
 }
 
 func serviceReadyTimeout(service Service) time.Duration {
@@ -242,35 +202,23 @@ func stopServices(services []*runningService, stdout io.Writer) {
 }
 
 func stopService(rs *runningService, stdout io.Writer) {
-	if rs == nil || rs.cmd == nil || rs.cmd.Process == nil {
+	if rs == nil || rs.process == nil || rs.process.Exited() {
 		return
 	}
-	select {
-	case <-rs.done:
-		return
-	default:
-	}
-
 	fmt.Fprintf(stdout, "%s %s\n", dim("STOP"), rs.name)
-	_ = terminateProcess(rs.cmd)
-	select {
-	case <-rs.done:
-	case <-time.After(rs.stopTimeout):
-		_ = killProcess(rs.cmd)
-		<-rs.done
-	}
+	rs.process.Stop(rs.stopTimeout)
 }
 
 func reportServiceExit(stdout, stderr io.Writer, rs *runningService) {
 	fmt.Fprintf(stdout, "%s service %s exited before it was ready\n", red("FAIL"), rs.name)
 	printServiceOutput(stdout, rs)
-	if rs.waitErr != nil {
-		fmt.Fprintf(stderr, "%s\n", rs.waitErr)
+	if err := rs.process.WaitErr(); err != nil {
+		fmt.Fprintf(stderr, "%s\n", err)
 	}
 }
 
 func printServiceOutput(stdout io.Writer, rs *runningService) {
-	printCapturedStream(stdout, "OUTPUT", rs.output.String())
+	printCapturedStream(stdout, "OUTPUT", rs.process.Output.String())
 }
 
 // serviceCommandLabel renders a service's command for display in cases --checks.

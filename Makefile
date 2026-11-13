@@ -5,10 +5,10 @@ BIN_DIR := bin
 
 build:
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/$(BINARY) .
+	go build -o $(BIN_DIR)/$(BINARY) ./cmd/signet
 
 install:
-	go install .
+	go install ./cmd/signet
 
 test:
 	go test ./...
