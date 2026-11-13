@@ -27,5 +27,8 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Examples
+        run: make examples
+
       - name: Acceptance
         run: make acceptance

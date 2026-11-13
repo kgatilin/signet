@@ -941,3 +941,45 @@ cases:
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature"
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundFails Broken per-scenario background"
               - "4 groups, 10 cases, 28 steps"
+
+  - id: examples-list
+    name: the examples module lists its features without building or running kv
+    steps:
+      - name: list the example features
+        run:
+          timeout: 300s
+          shell: rm -f examples/bin/kv && SIGNET_LIST=1 go -C examples test -json -count=1 ./... | ./bin/signet report --format cases && test ! -e examples/bin/kv
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "GROUP github.com/kgatilin/signet/examples/acceptance TestCommandLine kv command line"
+              - 'CASE id=version name="version reports the tool name and version" (2 steps)'
+              - "GROUP github.com/kgatilin/signet/examples/acceptance TestServerPerScenario Server per scenario"
+              - "GROUP github.com/kgatilin/signet/examples/acceptance TestStore Key-value store"
+              - 'CASE id=overwrite name="a second write replaces the first" (5 steps)'
+              - "3 groups, 11 cases, 35 steps"
+
+  - id: examples-run
+    name: the examples pass and their report has no failure
+    steps:
+      - name: run the examples and render the report
+        run:
+          timeout: 300s
+          shell: go -C examples test -json -count=1 ./... | ./bin/signet report
+        expect:
+          exitCode: 0
+          stdout:
+            orderedContains:
+              - "feature: kv command line"
+              - "feature: Server per scenario"
+              - "scope: scenario"
+              - "feature: Key-value store"
+              - "scope: feature"
+              - "- when: a client puts colour=blue and it is applied"
+              - "- text: both writes are in the event log in order"
+            contains:
+              - "status: pass"
+            notContains:
+              - "status: fail"
+              - "status: unknown"
