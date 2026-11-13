@@ -35,11 +35,10 @@ type F struct {
 }
 
 type background struct {
-	text   string
-	once   bool
-	fnOnce func(testing.TB)
-	fnEach func(*testing.T)
-	ran    bool
+	text string
+	once bool
+	fn   func(testing.TB)
+	ran  bool
 }
 
 type scenarioDef struct {
@@ -94,17 +93,19 @@ func (f *F) BackgroundOnce(text string, fn func(t testing.TB)) {
 	if strings.TrimSpace(text) == "" || fn == nil {
 		f.t.Fatal("signet: BackgroundOnce needs a text and a function")
 	}
-	f.backgrounds = append(f.backgrounds, &background{text: text, once: true, fnOnce: fn})
+	f.backgrounds = append(f.backgrounds, &background{text: text, once: true, fn: fn})
 }
 
 // Background registers a fixture that runs inside every scenario, before its
-// steps, with that scenario's *testing.T.
-func (f *F) Background(text string, fn func(t *testing.T)) {
+// steps. fn receives a testing.TB whose Cleanup, TempDir, Setenv, Chdir,
+// Context and ArtifactDir belong to the scenario, so what it starts lives
+// until the scenario ends.
+func (f *F) Background(text string, fn func(t testing.TB)) {
 	f.checkOpen("Background")
 	if strings.TrimSpace(text) == "" || fn == nil {
 		f.t.Fatal("signet: Background needs a text and a function")
 	}
-	f.backgrounds = append(f.backgrounds, &background{text: text, fnEach: fn})
+	f.backgrounds = append(f.backgrounds, &background{text: text, fn: fn})
 }
 
 // Scenario registers a scenario. id names its subtest, so it must be unique
@@ -150,29 +151,27 @@ func (f *F) runScenario(t *testing.T, sc *scenarioDef) {
 }
 
 // runBackgrounds runs the pending BackgroundOnce fixtures and every
-// Background; it returns false when one of them failed.
+// Background; it returns false when one of them failed. Each runs as a
+// subtest of the scenario, with its resources owned by the feature t
+// (BackgroundOnce) or the scenario t (Background).
 func (f *F) runBackgrounds(t *testing.T) bool {
 	for _, bg := range f.backgrounds {
+		owner := t
 		if bg.once {
 			if bg.ran {
 				continue
 			}
 			bg.ran = true
-			ok := t.Run("Background "+bg.text, func(bt *testing.T) {
-				backgroundAttrs(bt, bg)
-				bg.fnOnce(featureTB{T: bt, feature: f.t})
-			})
-			if !ok {
-				f.onceFailed = true
-				return false
-			}
-			continue
+			owner = f.t
 		}
 		ok := t.Run("Background "+bg.text, func(bt *testing.T) {
 			backgroundAttrs(bt, bg)
-			bg.fnEach(bt)
+			bg.fn(scopedTB{T: bt, owner: owner})
 		})
 		if !ok {
+			if bg.once {
+				f.onceFailed = true
+			}
 			return false
 		}
 	}
@@ -189,20 +188,21 @@ func backgroundAttrs(t *testing.T, bg *background) {
 	t.Attr(attrs.Text, attrs.Escape(bg.text))
 }
 
-// featureTB is the testing.TB given to BackgroundOnce: failures and logs go to
-// the background step, resources and cleanups to the feature.
-type featureTB struct {
+// scopedTB is the testing.TB given to backgrounds: failures and logs go to the
+// background step, resources and cleanups to the owner (feature or scenario),
+// so a service started in a background outlives the background step.
+type scopedTB struct {
 	*testing.T
-	feature *testing.T
+	owner *testing.T
 }
 
-func (w featureTB) Cleanup(fn func())        { w.feature.Cleanup(fn) }
-func (w featureTB) TempDir() string          { return w.feature.TempDir() }
-func (w featureTB) Setenv(key, value string) { w.feature.Setenv(key, value) }
-func (w featureTB) Chdir(dir string)         { w.feature.Chdir(dir) }
-func (w featureTB) Context() context.Context { return w.feature.Context() }
-func (w featureTB) ArtifactDir() string      { return w.feature.ArtifactDir() }
-func (w featureTB) Failed() bool             { return w.T.Failed() || w.feature.Failed() }
+func (w scopedTB) Cleanup(fn func())        { w.owner.Cleanup(fn) }
+func (w scopedTB) TempDir() string          { return w.owner.TempDir() }
+func (w scopedTB) Setenv(key, value string) { w.owner.Setenv(key, value) }
+func (w scopedTB) Chdir(dir string)         { w.owner.Chdir(dir) }
+func (w scopedTB) Context() context.Context { return w.owner.Context() }
+func (w scopedTB) ArtifactDir() string      { return w.owner.ArtifactDir() }
+func (w scopedTB) Failed() bool             { return w.T.Failed() || w.owner.Failed() }
 
 // Scenario registers the steps of one scenario.
 type Scenario struct {

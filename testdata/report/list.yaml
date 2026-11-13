@@ -29,6 +29,8 @@ features:
                 status: skip
           - then: the shared file exists
             status: skip
+          - then: the per-scenario file outlives its background step
+            status: skip
       - id: two
         name: the shared background ran once
         status: skip

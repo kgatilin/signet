@@ -6,6 +6,7 @@ features:
       First line.
       Second line.
     status: pass
+    duration: 10ms
     background:
       - text: a shared file
         scope: feature
@@ -28,6 +29,8 @@ features:
               - text: n is even
                 status: pass
           - then: the shared file exists
+            status: pass
+          - then: the per-scenario file outlives its background step
             status: pass
       - id: two
         name: the shared background ran once
@@ -55,7 +58,7 @@ features:
           - when: the action fails
             status: fail
             error: |-
-              fixture_test.go:85: action broke
+              fixture_test.go:99: action broke
                   second line
             then:
               - text: its check
@@ -74,7 +77,7 @@ features:
             then:
               - text: the first check fails
                 status: fail
-                error: 'fixture_test.go:93: first check broke'
+                error: 'fixture_test.go:107: first check broke'
               - text: the second check runs
                 status: pass
           - when: a later action
@@ -85,7 +88,7 @@ features:
         steps:
           - given: a broken precondition
             status: fail
-            error: 'fixture_test.go:99: precondition broke'
+            error: 'fixture_test.go:113: precondition broke'
           - then: a direct check
             status: skip
           - when: an action
@@ -107,12 +110,12 @@ features:
       - text: a service that does not start
         scope: feature
         status: fail
-        error: 'fixture_test.go:113: service refused to start'
+        error: 'fixture_test.go:127: service refused to start'
     scenarios:
       - id: first
         name: runs the background
         status: fail
-        error: 'background "a service that does not start" failed: fixture_test.go:113: service refused to start'
+        error: 'background "a service that does not start" failed: fixture_test.go:127: service refused to start'
         steps:
           - when: an action
             status: skip
@@ -133,12 +136,12 @@ features:
       - text: a fixture that fails in one scenario
         scope: scenario
         status: fail
-        error: 'fixture_test.go:128: fixture broke'
+        error: 'fixture_test.go:142: fixture broke'
     scenarios:
       - id: bad
         name: its background fails
         status: fail
-        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:128: fixture broke'
+        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:142: fixture broke'
         steps:
           - when: an action
             status: skip

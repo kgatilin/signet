@@ -80,7 +80,7 @@ func TestRunDocument(t *testing.T) {
 		t.Errorf("background = %+v", passing.Background)
 	}
 	one := passing.Scenarios[0]
-	if one.StepCount() != 5 || one.Steps[1].Keyword != "when" || len(one.Steps[1].Then) != 2 {
+	if one.StepCount() != 6 || one.Steps[1].Keyword != "when" || len(one.Steps[1].Then) != 2 {
 		t.Errorf("scenario one = %+v", one)
 	}
 

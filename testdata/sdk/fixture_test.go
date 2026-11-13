@@ -39,7 +39,15 @@ func TestPassing(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-		f.Background("a fresh counter", func(t *testing.T) { mark(t, "each") })
+		var scratch string
+		f.Background("a fresh counter", func(t testing.TB) {
+			mark(t, "each")
+			scratch = filepath.Join(t.TempDir(), "scratch")
+			if err := os.WriteFile(scratch, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { mark(t, "each-cleanup") })
+		})
 
 		f.Scenario("one", "every step kind passes", func(s *signet.Scenario) {
 			var n int
@@ -59,6 +67,12 @@ func TestPassing(t *testing.T) {
 				if _, err := os.Stat(shared); err != nil {
 					t.Fatal(err)
 				}
+			})
+			s.Then("the per-scenario file outlives its background step", func(t *testing.T) {
+				if _, err := os.Stat(scratch); err != nil {
+					t.Fatal(err)
+				}
+				mark(t, "one/scratch-checked")
 			})
 		})
 
@@ -123,7 +137,7 @@ func TestBackgroundOnceFails(t *testing.T) {
 
 func TestBackgroundFails(t *testing.T) {
 	signet.Feature(t, "Broken per-scenario background", "", func(f *signet.F) {
-		f.Background("a fixture that fails in one scenario", func(t *testing.T) {
+		f.Background("a fixture that fails in one scenario", func(t testing.TB) {
 			if strings.HasPrefix(t.Name(), "TestBackgroundFails/bad/") {
 				t.Fatal("fixture broke")
 			}

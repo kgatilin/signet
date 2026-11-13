@@ -131,6 +131,7 @@ func TestFeatureRunsScenariosAsSubtests(t *testing.T) {
 	run.expect(t, "TestPassing/one/When_n_doubles/Then_n_is_two", "pass")
 	run.expect(t, "TestPassing/one/When_n_doubles/Then_n_is_even", "pass")
 	run.expect(t, "TestPassing/one/Then_the_shared_file_exists", "pass")
+	run.expect(t, "TestPassing/one/Then_the_per-scenario_file_outlives_its_background_step", "pass")
 
 	run.expect(t, "TestPassing/two", "pass")
 	if _, ran := run.tests["TestPassing/two/Background_a_shared_file"]; ran {
@@ -140,7 +141,8 @@ func TestFeatureRunsScenariosAsSubtests(t *testing.T) {
 	run.expect(t, "TestPassing/two/When_nothing_happens/Then_the_shared_file_still_exists", "pass")
 	run.expect(t, "TestPassing/two/When_it_is_checked_again/Then_the_background_ran_once", "pass")
 
-	if !slices.Equal(run.marks, []string{"once", "each", "one/given", "one/when", "each", "two/when"}) {
+	want := []string{"once", "each", "one/given", "one/when", "one/scratch-checked", "each-cleanup", "each", "two/when", "each-cleanup"}
+	if !slices.Equal(run.marks, want) {
 		t.Errorf("marks = %q", run.marks)
 	}
 }

@@ -910,10 +910,10 @@ cases:
           stdout:
             orderedContains:
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature"
-              - 'CASE id=one name="every step kind passes" (5 steps)'
+              - 'CASE id=one name="every step kind passes" (6 steps)'
               - 'CASE id=two name="the shared background ran once" (4 steps)'
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestStepFailures Step failures"
-              - "4 groups, 10 cases, 27 steps"
+              - "4 groups, 10 cases, 28 steps"
 
   - id: report-invalid-format
     name: report rejects an unknown format
@@ -940,4 +940,4 @@ cases:
             orderedContains:
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature"
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundFails Broken per-scenario background"
-              - "4 groups, 10 cases, 27 steps"
+              - "4 groups, 10 cases, 28 steps"

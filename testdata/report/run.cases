@@ -1,5 +1,5 @@
 GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature
-CASE id=one name="every step kind passes" (5 steps)
+CASE id=one name="every step kind passes" (6 steps)
 CASE id=two name="the shared background ran once" (4 steps)
 GROUP github.com/kgatilin/signet/testdata/sdk TestStepFailures Step failures
 CASE id=when-fails name="a failed action skips its checks and later actions" (4 steps)
@@ -12,4 +12,4 @@ CASE id=second name="is skipped" (2 steps)
 GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundFails Broken per-scenario background
 CASE id=bad name="its background fails" (1 step)
 CASE id=good name="its background passes" (1 step)
-4 groups, 10 cases, 27 steps
+4 groups, 10 cases, 28 steps
