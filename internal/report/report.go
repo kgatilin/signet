@@ -131,8 +131,11 @@ func Parse(r io.Reader) (*Document, error) {
 			n.attrs[ev.Key] = append(n.attrs[ev.Key], value)
 			n.order = append(n.order, [2]string{ev.Key, value})
 		case "output":
-			if ev.OutputType == "error" || ev.OutputType == "error-continue" {
-				n.errors = append(n.errors, strings.TrimRight(ev.Output, "\n"))
+			switch ev.OutputType {
+			case "error":
+				n.errors = append(n.errors, strings.TrimPrefix(strings.TrimRight(ev.Output, "\n"), "    "))
+			case "error-continue":
+				n.errors = append(n.errors, strings.TrimPrefix(strings.TrimRight(ev.Output, "\n"), "        "))
 			}
 		}
 	}
@@ -274,18 +277,9 @@ func duration(n *node) string {
 	return time.Duration(n.elapsed * float64(time.Second)).Round(time.Millisecond).String()
 }
 
-// errorText joins failure lines and strips the indentation go test adds.
+// errorText joins failure lines recorded from error / error-continue events.
 func errorText(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	first := lines[0]
-	prefix := first[:len(first)-len(strings.TrimLeft(first, " \t"))]
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		out[i] = strings.TrimPrefix(line, prefix)
-	}
-	return strings.Join(out, "\n")
+	return strings.Join(lines, "\n")
 }
 
 func quote(s string) string { return `"` + s + `"` }

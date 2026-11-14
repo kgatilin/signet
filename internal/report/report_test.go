@@ -96,7 +96,7 @@ func TestRunDocument(t *testing.T) {
 	}
 
 	whenFails := doc.Features[1].Scenarios[0].Steps[0]
-	if !strings.HasSuffix(whenFails.Error, ": action broke\n    second line") {
+	if !strings.HasSuffix(whenFails.Error, ": action broke\nsecond line") {
 		t.Errorf("error = %q", whenFails.Error)
 	}
 }

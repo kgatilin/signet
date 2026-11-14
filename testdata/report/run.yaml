@@ -59,7 +59,7 @@ features:
             status: fail
             error: |-
               fixture_test.go:99: action broke
-                  second line
+              second line
             then:
               - text: its check
                 status: skip
