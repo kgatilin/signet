@@ -247,7 +247,7 @@ func TestFeatureListModeRegistersWithoutRunning(t *testing.T) {
 }
 
 func TestFeatureBackgroundServiceAndCmdDumpLogsWithoutPanic(t *testing.T) {
-	run := runFixtures(t, []string{"SIGNET_TEST_BG_CLEANUP=1"}, "-run", "^TestBackgroundCleanupLogsOnStepFailure$")
+	run := runFixtures(t, nil, "-run", "^TestBackgroundCleanupLogsOnStepFailure$")
 
 	feat := run.expect(t, "TestBackgroundCleanupLogsOnStepFailure", "fail")
 	scen := run.expect(t, "TestBackgroundCleanupLogsOnStepFailure/later-step-fails", "fail")

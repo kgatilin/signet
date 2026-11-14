@@ -12,4 +12,6 @@ CASE id=second name="is skipped" (2 steps)
 GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundFails Broken per-scenario background
 CASE id=bad name="its background fails" (1 step)
 CASE id=good name="its background passes" (1 step)
-4 groups, 10 cases, 28 steps
+GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundCleanupLogsOnStepFailure Background cleanup logging
+CASE id=later-step-fails name="background fixtures log their commands and service output when a later step fails" (1 step)
+5 groups, 11 cases, 29 steps

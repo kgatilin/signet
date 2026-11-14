@@ -141,3 +141,21 @@ features:
         steps:
           - when: an action
             status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestBackgroundCleanupLogsOnStepFailure
+    feature: Background cleanup logging
+    status: skip
+    background:
+      - text: a shared service and command
+        scope: feature
+        status: skip
+      - text: a per-scenario command
+        scope: scenario
+        status: skip
+    scenarios:
+      - id: later-step-fails
+        name: background fixtures log their commands and service output when a later step fails
+        status: skip
+        steps:
+          - when: the step fails
+            status: skip
