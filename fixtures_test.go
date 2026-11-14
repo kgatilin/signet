@@ -147,6 +147,12 @@ func TestCmdThatCannotStart(t *testing.T) {
 	}
 }
 
+func TestCmdExitsZeroWithBackgroundChildHoldingPipe(t *testing.T) {
+	// Child inherits stdout and sleeps beyond WaitDelay (2s); parent exits 0 immediately.
+	r := Cmd(t, "/bin/sh", "-c", "sleep 5 & echo parent-done").Run()
+	r.OK().StdoutContains("parent-done")
+}
+
 func TestJSONDecodesStdout(t *testing.T) {
 	type item struct {
 		Name  string `json:"name"`

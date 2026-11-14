@@ -91,7 +91,7 @@ func (c *Command) Run() *Result {
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		r.ExitCode, r.TimedOut = -1, true
-	case err == nil:
+	case err == nil, errors.Is(err, exec.ErrWaitDelay):
 	case errors.As(err, &exitErr):
 		r.ExitCode = exitErr.ExitCode()
 	default:
