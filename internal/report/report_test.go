@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -217,6 +218,28 @@ func TestListDocument(t *testing.T) {
 				t.Errorf("%s/%s: list and run step counts differ", f.Test, s.ID)
 			}
 		}
+	}
+}
+
+// Without -json, go test prints text, and a report built from it would be an
+// empty document that exits 0.
+func TestParseRejectsInputWithoutEvents(t *testing.T) {
+	for name, input := range map[string]string{
+		"empty":        "",
+		"go test text": "=== RUN   TestF\n--- PASS: TestF (0.00s)\nPASS\nok  \texample.com/app\t0.012s\n",
+		"other json":   `{"level":"info","msg":"started"}` + "\n",
+	} {
+		if _, err := Parse(strings.NewReader(input)); !errors.Is(err, ErrNoEvents) {
+			t.Errorf("%s: err = %v, want ErrNoEvents", name, err)
+		}
+	}
+
+	doc, err := Parse(strings.NewReader(`{"Action":"pass","Package":"example.com/app","Test":"TestPlain"}` + "\n"))
+	if err != nil {
+		t.Fatalf("a stream of plain tests: %v", err)
+	}
+	if len(doc.Features) != 0 || doc.Failed() {
+		t.Errorf("features = %d, failed = %v", len(doc.Features), doc.Failed())
 	}
 }
 

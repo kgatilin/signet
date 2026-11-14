@@ -74,6 +74,7 @@ Formats:
   cases  GROUP and CASE rows, as printed by signet cases
 
 Exit codes: 0 when nothing failed, 1 when a feature or package failed,
-2 on invalid usage or unreadable input.
+2 on invalid usage, unreadable input, or input without go test -json events
+(go test run without -json, or no input at all).
 `)
 }

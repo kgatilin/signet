@@ -5,6 +5,7 @@ package report
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -100,12 +101,17 @@ type event struct {
 	Elapsed    float64
 }
 
+// ErrNoEvents is returned by Parse for input without a single test event,
+// such as the text go test prints without -json.
+var ErrNoEvents = errors.New("the input has no go test -json events; run the tests with -json: go test -json ./... | signet report")
+
 // Parse reads a `go test -json` stream. Lines that are not JSON events are
-// ignored.
+// ignored; input that has none at all is an error.
 func Parse(r io.Reader) (*Document, error) {
 	doc := &Document{}
 	nodes := map[string]*node{} // package + "\x00" + test name
 	var roots []*node
+	events := 0
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -114,6 +120,7 @@ func Parse(r io.Reader) (*Document, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil || ev.Action == "" {
 			continue
 		}
+		events++
 		if ev.Test == "" {
 			if ev.Action == "fail" {
 				doc.FailedPackages = append(doc.FailedPackages, ev.Package)
@@ -158,6 +165,9 @@ func Parse(r io.Reader) (*Document, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
+	}
+	if events == 0 {
+		return nil, ErrNoEvents
 	}
 
 	for _, root := range roots {

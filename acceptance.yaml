@@ -936,6 +936,62 @@ cases:
             contains:
               - 'unknown format "html"'
 
+  - id: report-no-events
+    name: report exits 2 on input without go test -json events
+    steps:
+      - name: go test output without -json
+        run:
+          shell: printf 'PASS\nok  \texample.com/app\t0.012s\n' | ./bin/signet report
+        expect:
+          exitCode: 2
+          stdout:
+            notContains:
+              - "features:"
+          stderr:
+            contains:
+              - "the input has no go test -json events"
+              - "go test -json ./... | signet report"
+
+      - name: empty input
+        run:
+          shell: ./bin/signet report < /dev/null
+        expect:
+          exitCode: 2
+          stdout:
+            notContains:
+              - "features:"
+          stderr:
+            contains:
+              - "the input has no go test -json events"
+
+      - name: empty input in the cases format
+        run:
+          shell: ./bin/signet report --format cases < /dev/null
+        expect:
+          exitCode: 2
+          stdout:
+            notContains:
+              - "0 groups"
+
+      - name: a stream of plain tests has events and no features
+        run:
+          shell: |
+            printf '%s\n' '{"Action":"run","Package":"example.com/app","Test":"TestPlain"}' '{"Action":"pass","Package":"example.com/app","Test":"TestPlain"}' '{"Action":"pass","Package":"example.com/app"}' | ./bin/signet report
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "features: []"
+
+      - name: report help names the exit code
+        run:
+          args: ["report", "--help"]
+        expect:
+          exitCode: 0
+          stdout:
+            contains:
+              - "input without go test -json events"
+
   - id: report-sdk-list-live
     name: SIGNET_LIST=1 go test lists SDK features without running their steps
     steps:

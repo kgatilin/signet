@@ -45,7 +45,7 @@ signet completion zsh
 | `validate` | Parse and statically validate specs. No commands run. Exit `1` on any invalid group. |
 | `run`      | Build the subject, start services, execute each case's steps, and report pass/fail. Exit `1` on any failed check, `130` when a confirmation is declined. |
 | `cases`    | List cases without executing anything. `--checks` also prints each step's command, expected checks, captures (`CAPTURE`) and capture references (`USES`), plus the `BUILD`/`SERVICE` setup. |
-| `report`   | Read a `go test -json` stream (stdin or a file) of tests written with the Go SDK and print the feature document (`--format yaml`, default) or `GROUP`/`CASE` rows (`--format cases`). Exit `1` when a feature or package failed, `2` on invalid usage. |
+| `report`   | Read a `go test -json` stream (stdin or a file) of tests written with the Go SDK and print the feature document (`--format yaml`, default) or `GROUP`/`CASE` rows (`--format cases`). Exit `1` when a feature or package failed, `2` on invalid usage or when the input has no `go test -json` events (`go test` run without `-json`, or empty input). A stream of plain tests without features exits `0` with `features: []`. |
 | `completion` | Emit a shell completion script (Cobra). |
 
 ### `run` flags
