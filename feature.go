@@ -3,9 +3,11 @@ package signet
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kgatilin/signet/internal/attrs"
@@ -166,7 +168,9 @@ func (f *F) runBackgrounds(t *testing.T) bool {
 		}
 		ok := t.Run("Background "+bg.text, func(bt *testing.T) {
 			backgroundAttrs(bt, bg)
-			bg.fn(scopedTB{T: bt, owner: owner})
+			var done atomic.Bool
+			defer done.Store(true)
+			bg.fn(scopedTB{T: bt, owner: owner, done: &done})
 		})
 		if !ok {
 			if bg.once {
@@ -189,20 +193,32 @@ func backgroundAttrs(t *testing.T, bg *background) {
 }
 
 // scopedTB is the testing.TB given to backgrounds: failures and logs go to the
-// background step, resources and cleanups to the owner (feature or scenario),
-// so a service started in a background outlives the background step.
+// background step while it runs, and to the owner (feature or scenario) once
+// the background step finishes, so resources and Cleanup hooks started in a
+// background safely outlive the background step.
 type scopedTB struct {
 	*testing.T
 	owner *testing.T
+	done  *atomic.Bool
 }
 
-func (w scopedTB) Cleanup(fn func())        { w.owner.Cleanup(fn) }
-func (w scopedTB) TempDir() string          { return w.owner.TempDir() }
-func (w scopedTB) Setenv(key, value string) { w.owner.Setenv(key, value) }
-func (w scopedTB) Chdir(dir string)         { w.owner.Chdir(dir) }
-func (w scopedTB) Context() context.Context { return w.owner.Context() }
-func (w scopedTB) ArtifactDir() string      { return w.owner.ArtifactDir() }
-func (w scopedTB) Failed() bool             { return w.T.Failed() || w.owner.Failed() }
+func (w scopedTB) live() *testing.T {
+	if w.done.Load() {
+		return w.owner
+	}
+	return w.T
+}
+
+func (w scopedTB) Cleanup(fn func())               { w.owner.Cleanup(fn) }
+func (w scopedTB) TempDir() string                 { return w.owner.TempDir() }
+func (w scopedTB) Setenv(key, value string)        { w.owner.Setenv(key, value) }
+func (w scopedTB) Chdir(dir string)                { w.owner.Chdir(dir) }
+func (w scopedTB) Context() context.Context        { return w.owner.Context() }
+func (w scopedTB) ArtifactDir() string             { return w.owner.ArtifactDir() }
+func (w scopedTB) Failed() bool                    { return w.T.Failed() || w.owner.Failed() }
+func (w scopedTB) Log(args ...any)                 { w.live().Helper(); w.live().Log(args...) }
+func (w scopedTB) Logf(format string, args ...any) { w.live().Helper(); w.live().Logf(format, args...) }
+func (w scopedTB) Output() io.Writer               { return w.live().Output() }
 
 // Scenario registers the steps of one scenario.
 type Scenario struct {

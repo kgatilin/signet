@@ -21,9 +21,10 @@ type fixtureRun struct {
 }
 
 type fixtureTest struct {
-	status string
-	attrs  map[string][]string
-	errors []string
+	status  string
+	attrs   map[string][]string
+	errors  []string
+	outputs []string
 }
 
 // runFixtures runs the fixture package with extra environment and go test
@@ -64,6 +65,7 @@ func runFixtures(t *testing.T, env []string, args ...string) *fixtureRun {
 		case "attr":
 			ft.attrs[ev.Key] = append(ft.attrs[ev.Key], attrs.Unescape(ev.Value))
 		case "output":
+			ft.outputs = append(ft.outputs, ev.Output)
 			if ev.OutputType == "error" || ev.OutputType == "error-continue" {
 				ft.errors = append(ft.errors, strings.TrimSpace(ev.Output))
 			}
@@ -241,5 +243,27 @@ func TestFeatureListModeRegistersWithoutRunning(t *testing.T) {
 	}
 	if len(run.marks) != 0 {
 		t.Errorf("closures ran in list mode: %q", run.marks)
+	}
+}
+
+func TestFeatureBackgroundServiceAndCmdDumpLogsWithoutPanic(t *testing.T) {
+	run := runFixtures(t, []string{"SIGNET_TEST_BG_CLEANUP=1"}, "-run", "^TestBackgroundCleanupLogsOnStepFailure$")
+
+	feat := run.expect(t, "TestBackgroundCleanupLogsOnStepFailure", "fail")
+	scen := run.expect(t, "TestBackgroundCleanupLogsOnStepFailure/later-step-fails", "fail")
+	run.expect(t, "TestBackgroundCleanupLogsOnStepFailure/later-step-fails/When_the_step_fails", "fail")
+
+	featOut := strings.Join(feat.outputs, "")
+	scenOut := strings.Join(scen.outputs, "")
+	for _, out := range []string{featOut, scenOut} {
+		if strings.Contains(out, "panic:") {
+			t.Fatalf("unexpected panic in output:\n%s", out)
+		}
+	}
+	if !strings.Contains(featOut, "bg-once-svc-out") || !strings.Contains(featOut, "bg-once-cmd-out") {
+		t.Errorf("feature output missing BackgroundOnce dumps:\n%s", featOut)
+	}
+	if !strings.Contains(scenOut, "bg-each-cmd-out") {
+		t.Errorf("scenario output missing Background dump:\n%s", scenOut)
 	}
 }

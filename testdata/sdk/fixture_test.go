@@ -150,3 +150,28 @@ func TestBackgroundFails(t *testing.T) {
 		})
 	})
 }
+
+func TestBackgroundCleanupLogsOnStepFailure(t *testing.T) {
+	if os.Getenv("SIGNET_TEST_BG_CLEANUP") == "" && os.Getenv(signet.ListEnv) != "" {
+		t.SkipNow()
+	}
+	if os.Getenv("SIGNET_TEST_BG_CLEANUP") == "" {
+		return
+	}
+	signet.Feature(t, "Background cleanup logging", "", func(f *signet.F) {
+		f.BackgroundOnce("a shared service and command", func(t testing.TB) {
+			signet.Cmd(t, "/bin/sh", "-c", "echo bg-once-cmd-out").Run().OK()
+			signet.Service(t, "once-svc", "/bin/sh", "-c", "echo bg-once-svc-out; sleep 30").
+				ReadyLog("bg-once-svc-out").
+				Start()
+		})
+		f.Background("a per-scenario command", func(t testing.TB) {
+			signet.Cmd(t, "/bin/sh", "-c", "echo bg-each-cmd-out").Run().OK()
+		})
+		f.Scenario("later-step-fails", "background fixtures dump logs without panicking when a step fails", func(s *signet.Scenario) {
+			s.When("the step fails", func(t *testing.T) {
+				t.Fatal("boom after background")
+			})
+		})
+	})
+}
