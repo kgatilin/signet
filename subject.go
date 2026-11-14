@@ -1,6 +1,7 @@
 package signet
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,7 +10,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/kgatilin/signet/internal/proc"
 )
+
+const buildTimeout = 5 * time.Minute
 
 // BinaryEnv names the environment variable that points every Subject at an
 // already built binary. Its value must be an absolute path.
@@ -76,7 +82,12 @@ func (s *Subj) buildAndResolve() (string, error) {
 		return "", err
 	}
 	if strings.TrimSpace(s.build) != "" {
-		cmd := exec.Command("/bin/sh", "-c", s.build)
+		ctx, cancel := context.WithTimeout(context.Background(), buildTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", s.build)
+		proc.SetGroup(cmd)
+		cmd.Cancel = func() error { return proc.Kill(cmd) }
+		cmd.WaitDelay = 2 * time.Second
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return "", fmt.Errorf("build %q in %s: %v\n%s", s.build, root, err, strings.TrimRight(string(out), "\n"))
