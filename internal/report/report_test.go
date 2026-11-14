@@ -85,8 +85,13 @@ func TestRunDocument(t *testing.T) {
 	}
 
 	broken := doc.Features[2]
-	if broken.Background[0].Status != "fail" || !strings.Contains(broken.Background[0].Error, "service refused to start") {
+	if broken.Background[0].Status != "fail" || !strings.Contains(broken.Background[0].Error, "service dying exited before it was ready") {
 		t.Errorf("background = %+v", broken.Background[0])
+	}
+	// The service is stopped and its output logged when its owner, the
+	// feature, ends: that output has to be in the document.
+	if broken.Log != "service.go:77: signet: service dying output:\n  listen: address already in use" {
+		t.Errorf("feature log = %q", broken.Log)
 	}
 	if broken.Scenarios[0].Status != "fail" || !strings.Contains(broken.Scenarios[0].Error, `background "a service that does not start" failed`) {
 		t.Errorf("first scenario = %+v", broken.Scenarios[0])
@@ -98,6 +103,90 @@ func TestRunDocument(t *testing.T) {
 	whenFails := doc.Features[1].Scenarios[0].Steps[0]
 	if !strings.HasSuffix(whenFails.Error, ": action broke\nsecond line") {
 		t.Errorf("error = %q", whenFails.Error)
+	}
+}
+
+// The output types are those of a real stream: frame for "=== RUN" and
+// "--- FAIL" lines, error and error-continue for failures, none for t.Log
+// lines and for what the test process printed.
+func TestFailedNodesCarryTheirLog(t *testing.T) {
+	out := func(test, typ, text string) string {
+		if typ != "" {
+			typ = `,"OutputType":"` + typ + `"`
+		}
+		return `{"Action":"output","Package":"p","Test":"` + test + `","Output":"` + text + `\n"` + typ + `}`
+	}
+	keyword := func(test, kw, text string) string {
+		return `{"Action":"attr","Package":"p","Test":"` + test + `","Key":"signet.keyword","Value":"` + kw + `"}` + "\n" +
+			`{"Action":"attr","Package":"p","Test":"` + test + `","Key":"signet.text","Value":"` + text + `"}`
+	}
+	stream := strings.Join([]string{
+		`{"Action":"attr","Package":"p","Test":"TestF","Key":"signet.feature","Value":"F"}`,
+		`{"Action":"attr","Package":"p","Test":"TestF","Key":"signet.background.scenario","Value":"bg"}`,
+		`{"Action":"attr","Package":"p","Test":"TestF/s","Key":"signet.id","Value":"s"}`,
+
+		keyword("TestF/s/Background_bg", "background", "bg"),
+		`{"Action":"attr","Package":"p","Test":"TestF/s/Background_bg","Key":"signet.scope","Value":"scenario"}`,
+		out("TestF/s/Background_bg", "", "    x_test.go:1: background log"),
+		out("TestF/s/Background_bg", "error", "    x_test.go:2: background broke"),
+		`{"Action":"fail","Package":"p","Test":"TestF/s/Background_bg"}`,
+
+		keyword("TestF/s/Given_g", "given", "g"),
+		out("TestF/s/Given_g", "", "    x_test.go:3: log of a passing step"),
+		`{"Action":"pass","Package":"p","Test":"TestF/s/Given_g"}`,
+
+		keyword("TestF/s/When_w", "when", "w"),
+		out("TestF/s/When_w", "frame", "=== RUN   TestF/s/When_w"),
+		out("TestF/s/When_w", "", "printed by the test process  "),
+		out("TestF/s/When_w", "", "    x_test.go:4: first line"),
+		out("TestF/s/When_w", "", "          indented second line"),
+		out("TestF/s/When_w", "error", "    x_test.go:5: step broke"),
+		out("TestF/s/When_w", "error-continue", "        more"),
+		out("TestF/s/When_w", "frame", "--- FAIL: TestF/s/When_w (0.00s)"),
+		`{"Action":"fail","Package":"p","Test":"TestF/s/When_w"}`,
+
+		out("TestF/s", "", "    command.go:1: signet: last 1 command(s):"),
+		out("TestF/s", "", "        $ app run  (exit 1, 5ms)"),
+		`{"Action":"fail","Package":"p","Test":"TestF/s"}`,
+		out("TestF", "", "    service.go:1: signet: service api output:"),
+		out("TestF", "", "          bind: address already in use"),
+		`{"Action":"fail","Package":"p","Test":"TestF"}`,
+	}, "\n")
+	doc, err := Parse(strings.NewReader(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := doc.Features[0]
+	s := f.Scenarios[0]
+	for _, c := range []struct{ where, got, want string }{
+		{"feature", f.Log, "service.go:1: signet: service api output:\n  bind: address already in use"},
+		{"scenario", s.Log, "command.go:1: signet: last 1 command(s):\n$ app run  (exit 1, 5ms)"},
+		{"background", f.Background[0].Log, "x_test.go:1: background log"},
+		{"passing step", s.Steps[0].Log, ""},
+		{"failed step", s.Steps[1].Log, "printed by the test process\nx_test.go:4: first line\n  indented second line"},
+		{"failed step error", s.Steps[1].Error, "x_test.go:5: step broke\nmore"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.where, c.got, c.want)
+		}
+	}
+
+	var yamlOut bytes.Buffer
+	if err := WriteYAML(&yamlOut, doc); err != nil {
+		t.Fatal(err)
+	}
+	want := `          - when: w
+            status: fail
+            error: |-
+              x_test.go:5: step broke
+              more
+            log: |-
+              printed by the test process
+              x_test.go:4: first line
+                indented second line
+`
+	if !strings.Contains(yamlOut.String(), want) {
+		t.Errorf("step is not rendered as\n%s\ngot\n%s", want, yamlOut.String())
 	}
 }
 

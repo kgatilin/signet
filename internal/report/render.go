@@ -35,6 +35,7 @@ func (s *Step) node(key string) *yaml.Node {
 	add("status", s.Status)
 	add("duration", s.Duration)
 	add("error", s.Error)
+	add("log", s.Log)
 	if len(s.Then) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode}
 		for _, th := range s.Then {

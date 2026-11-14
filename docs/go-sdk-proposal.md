@@ -329,9 +329,11 @@ features:
                 status: pass
 ```
 
-The document contains only the text written in `Feature`, `BackgroundOnce` /
-`Background`, `Scenario`, `Given`, `When` and `Then`, plus status, duration and
-any failure message. Commands, JSON and assertions stay in the code.
+The document contains the text written in `Feature`, `BackgroundOnce` /
+`Background`, `Scenario`, `Given`, `When` and `Then`, plus status and
+duration. A failed entry also carries `error`, its failure messages, and
+`log`, the plain output of that test. Commands, JSON and assertions of
+passing tests stay in the code.
 `background` is a list: `scope: feature` for `BackgroundOnce`, `scope:
 scenario` for `Background`.
 
@@ -395,8 +397,9 @@ in `internal/proc`.
   registration, including in `SIGNET_LIST=1` mode. Keeping registration bodies
   free of side effects (only `var` declarations and step calls) is a
   convention, not something the API enforces.
-- Executed commands are not in the document. Adding them means `Result`
-  writes them as attributes, and the document stops being description only.
+- Executed commands of passing tests are not in the document. Adding them
+  means `Result` writes them as attributes, and the document stops being
+  description only. A failed scenario has its last commands in `log`.
 - The BDD report YAML has a different shape (`when` / `then`) from
   `acceptance.yaml` (`run` / `expect`), though scenario IDs and names map
   1-to-1 onto `CASE id=<id> name="<name>"` via `signet report --format cases`.
@@ -459,6 +462,19 @@ What changed against the design above while building it:
   `package` and `test`, so one stream from many packages is one file.
   Backgrounds carry `status` and `error`; a scenario whose background failed
   carries the message in its own `error`.
+- **Failed entries carry `log`.** The command and service output of a
+  failing test is written with `t.Log`, and the report kept only lines that
+  `go test -json` types as `error` or `error-continue`, so in
+  `go test -json | signet report` that output was lost. A failed feature,
+  background, scenario or step now has a `log` field with the output lines
+  of its test that have no type (frame lines such as `=== RUN` and
+  `--- FAIL` are typed `frame`), without go test's indentation. `testing`
+  attributes a line logged after its test finished to the nearest parent
+  still running, so the output of commands and services is on the scenario
+  or feature that owns them. The untyped lines include what the test process
+  printed to stdout itself; such a line loses four or eight leading spaces
+  if it has them, because the type does not tell it from an indented
+  `t.Log` line.
 - **`signet report` exits 1** when a feature or package failed, so
   `go test -json | signet report` fails a CI step like `go test` would.
 - **Commands default to a 1 minute timeout** (`Timeout(0)` leaves only the

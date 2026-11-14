@@ -856,7 +856,7 @@ cases:
               - "panic"
 
   - id: report-run-document
-    name: report turns a go test -json run into a feature document and fails on failed features
+    name: report turns a go test -json run into a feature document with failure messages and logs, and fails on failed features
     steps:
       - name: render a recorded run with failures
         run:
@@ -875,8 +875,17 @@ cases:
               - "status: fail"
               - "action broke"
               - "feature: Broken background"
+              - "log: |-"
+              - "signet: service dying output:"
+              - "listen: address already in use"
               - "scope: feature"
-              - "service refused to start"
+              - "service dying exited before it was ready"
+              - "feature: Failure output"
+              - "- text: a check with a command fails"
+              - "exit 3, want 0"
+              - "log: |-"
+              - "signet: last 1 command(s):"
+              - "then-cmd-out"
             notContains:
               - "panic"
           stderr:

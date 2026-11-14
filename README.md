@@ -468,6 +468,37 @@ features:
 test's failure messages, and a scenario whose background failed carries the
 background's message.
 
+A failed feature, background, scenario or step also carries `log`: the plain
+output `go test` attributed to that test, which is its `t.Log` lines and
+whatever the test process printed while it ran. This is where the SDK's
+failure output ends up: the last commands with their output, and the output
+of services.
+
+```yaml
+    scenarios:
+      - id: put-then-get
+        name: a write becomes readable once applied
+        status: fail
+        log: |-
+          command.go:234: signet: last 1 command(s):
+          $ /work/app/bin/app put greeting hello  (exit 1, 12ms)
+          stderr:
+            app: server answered 500
+        steps:
+          - when: a client puts greeting=hello and it is applied
+            status: fail
+            error: |-
+              store_test.go:27: /work/app/bin/app put greeting hello: exit 1, want 0
+              stderr:
+                app: server answered 500
+```
+
+A log line written after its test has finished is attributed by `testing` to
+the nearest parent still running. Commands and services belong to the
+scenario or the feature and are logged when it ends, so their output is in
+the `log` of that scenario or feature, next to the failed step. Tests that
+pass keep their output out of the document.
+
 ## Environment
 
 Color is enabled automatically on terminals. Set `NO_COLOR=1` to disable it, or

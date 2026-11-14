@@ -210,7 +210,7 @@ func TestFeatureBackgroundOnceFailureSkipsLaterScenarios(t *testing.T) {
 
 	run.expect(t, "TestBackgroundOnceFails/first", "fail")
 	bg := run.expect(t, "TestBackgroundOnceFails/first/Background_a_service_that_does_not_start", "fail")
-	if !strings.Contains(strings.Join(bg.errors, "\n"), "service refused to start") {
+	if !strings.Contains(strings.Join(bg.errors, "\n"), "service dying exited before it was ready") {
 		t.Errorf("errors = %q", bg.errors)
 	}
 	run.expect(t, "TestBackgroundOnceFails/first/When_an_action", "skip")

@@ -131,7 +131,11 @@ func TestStepFailures(t *testing.T) {
 
 func TestBackgroundOnceFails(t *testing.T) {
 	signet.Feature(t, "Broken background", "", func(f *signet.F) {
-		f.BackgroundOnce("a service that does not start", func(t testing.TB) { t.Fatal("service refused to start") })
+		f.BackgroundOnce("a service that does not start", func(t testing.TB) {
+			signet.Service(t, "dying", "/bin/sh", "-c", "echo 'listen: address already in use' >&2; exit 1").
+				ReadyLog("listening").
+				Start()
+		})
 		f.Scenario("first", "runs the background", func(s *signet.Scenario) {
 			s.When("an action", func(t testing.TB) { mark(t, "bg/first") })
 		})

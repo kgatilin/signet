@@ -20,6 +20,9 @@ type Document struct {
 	FailedPackages []string `yaml:"-"`
 }
 
+// Log, here and on Background, Scenario and Step, is the plain output go test
+// attributed to a failed test: t.Log lines and what the test process printed
+// while it ran. It is empty for a test that did not fail.
 type Feature struct {
 	Package     string        `yaml:"package"`
 	Test        string        `yaml:"test"`
@@ -28,18 +31,21 @@ type Feature struct {
 	Status      string        `yaml:"status"`
 	Duration    string        `yaml:"duration,omitempty"`
 	Error       string        `yaml:"error,omitempty"`
+	Log         string        `yaml:"log,omitempty"`
 	Background  []*Background `yaml:"background,omitempty"`
 	Scenarios   []*Scenario   `yaml:"scenarios"`
 }
 
 // Background is a BackgroundOnce (scope feature) or Background (scope
 // scenario). Status is fail when any run of it failed, pass when it ran and
-// never failed, skip when it never ran.
+// never failed, skip when it never ran. Error and Log are those of its first
+// failed run.
 type Background struct {
 	Text   string `yaml:"text"`
 	Scope  string `yaml:"scope"`
 	Status string `yaml:"status"`
 	Error  string `yaml:"error,omitempty"`
+	Log    string `yaml:"log,omitempty"`
 }
 
 type Scenario struct {
@@ -48,6 +54,7 @@ type Scenario struct {
 	Status   string  `yaml:"status"`
 	Duration string  `yaml:"duration,omitempty"`
 	Error    string  `yaml:"error,omitempty"`
+	Log      string  `yaml:"log,omitempty"`
 	Steps    []*Step `yaml:"steps"`
 }
 
@@ -58,6 +65,7 @@ type Step struct {
 	Status   string
 	Duration string
 	Error    string
+	Log      string
 	Then     []*Step
 }
 
@@ -70,6 +78,7 @@ type node struct {
 	attrs    map[string][]string
 	order    [][2]string // attributes in the order they were written
 	errors   []string
+	logs     []string
 	children []*node
 }
 
@@ -131,11 +140,19 @@ func Parse(r io.Reader) (*Document, error) {
 			n.attrs[ev.Key] = append(n.attrs[ev.Key], value)
 			n.order = append(n.order, [2]string{ev.Key, value})
 		case "output":
+			// go test types an output line as frame ("=== RUN", "--- FAIL"),
+			// error, error-continue, or leaves the type empty for t.Log
+			// lines and for what the test process printed itself.
+			line := strings.TrimRight(ev.Output, "\n")
 			switch ev.OutputType {
 			case "error":
-				n.errors = append(n.errors, strings.TrimPrefix(strings.TrimRight(ev.Output, "\n"), "    "))
+				n.errors = append(n.errors, strings.TrimPrefix(line, firstIndent))
 			case "error-continue":
-				n.errors = append(n.errors, strings.TrimPrefix(strings.TrimRight(ev.Output, "\n"), "        "))
+				n.errors = append(n.errors, strings.TrimPrefix(line, nextIndent))
+			case "":
+				// Without trailing blanks the YAML encoder keeps the log
+				// a block of lines.
+				n.logs = append(n.logs, strings.TrimRight(unindent(line), " \t\r"))
 			}
 		}
 	}
@@ -147,6 +164,24 @@ func Parse(r io.Reader) (*Document, error) {
 		collectFeatures(doc, root)
 	}
 	return doc, nil
+}
+
+// go test indents the first line of a message by four spaces and its other
+// lines by eight.
+const (
+	firstIndent = "    "
+	nextIndent  = "        "
+)
+
+// unindent strips go test's indentation from a plain output line, whose type
+// does not say whether it starts a t.Log message or continues one. A line the
+// test process printed itself has no such indentation; if it starts with four
+// or more spaces of its own, it loses them.
+func unindent(line string) string {
+	if rest, ok := strings.CutPrefix(line, nextIndent); ok {
+		return rest
+	}
+	return strings.TrimPrefix(line, firstIndent)
 }
 
 // findParent returns the nearest known ancestor. Subtest names may contain
@@ -180,6 +215,7 @@ func buildFeature(n *node) *Feature {
 		Status:      status(n),
 		Duration:    duration(n),
 		Error:       errorText(n.errors),
+		Log:         logText(n),
 		Scenarios:   []*Scenario{},
 	}
 	for _, kv := range n.order {
@@ -204,6 +240,7 @@ func buildScenario(f *Feature, n *node) *Scenario {
 		Name:     n.attr(attrs.Scenario),
 		Status:   status(n),
 		Duration: duration(n),
+		Log:      logText(n),
 		Steps:    []*Step{},
 	}
 	var errs []string
@@ -219,10 +256,9 @@ func buildScenario(f *Feature, n *node) *Scenario {
 			}
 			switch child.status {
 			case "fail":
-				bg.Status = "fail"
 				msg := errorText(child.errors)
-				if bg.Error == "" {
-					bg.Error = msg
+				if bg.Status != "fail" {
+					bg.Status, bg.Error, bg.Log = "fail", msg, logText(child)
 				}
 				errs = append(errs, "background "+quote(bg.Text)+" failed: "+msg)
 			case "pass":
@@ -254,6 +290,7 @@ func buildStep(n *node) *Step {
 		Status:   status(n),
 		Duration: duration(n),
 		Error:    errorText(n.errors),
+		Log:      logText(n),
 	}
 	for _, child := range n.children {
 		if child.attr(attrs.Keyword) == attrs.KeywordThen {
@@ -280,6 +317,15 @@ func duration(n *node) string {
 // errorText joins failure lines recorded from error / error-continue events.
 func errorText(lines []string) string {
 	return strings.Join(lines, "\n")
+}
+
+// logText joins the plain output of a failed test; a test that did not fail
+// keeps its output out of the document.
+func logText(n *node) string {
+	if n.status != "fail" {
+		return ""
+	}
+	return strings.Trim(strings.Join(n.logs, "\n"), "\n")
 }
 
 func quote(s string) string { return `"` + s + `"` }

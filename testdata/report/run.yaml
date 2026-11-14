@@ -6,7 +6,7 @@ features:
       First line.
       Second line.
     status: pass
-    duration: 140ms
+    duration: 70ms
     background:
       - text: a shared file
         scope: feature
@@ -18,7 +18,7 @@ features:
       - id: one
         name: every step kind passes
         status: pass
-        duration: 60ms
+        duration: 50ms
         steps:
           - given: n is one
             status: pass
@@ -36,7 +36,7 @@ features:
       - id: two
         name: the shared background ran once
         status: pass
-        duration: 40ms
+        duration: 10ms
         steps:
           - when: nothing happens
             status: pass
@@ -117,16 +117,21 @@ features:
     test: TestBackgroundOnceFails
     feature: Broken background
     status: fail
+    duration: 380ms
+    log: |-
+      service.go:77: signet: service dying output:
+        listen: address already in use
     background:
       - text: a service that does not start
         scope: feature
         status: fail
-        error: 'fixture_test.go:134: service refused to start'
+        error: 'fixture_test.go:137: signet: service dying exited before it was ready (exit status 1); waiting for "listening" in the output'
     scenarios:
       - id: first
         name: runs the background
         status: fail
-        error: 'background "a service that does not start" failed: fixture_test.go:134: service refused to start'
+        duration: 380ms
+        error: 'background "a service that does not start" failed: fixture_test.go:137: signet: service dying exited before it was ready (exit status 1); waiting for "listening" in the output'
         steps:
           - when: an action
             status: skip
@@ -147,12 +152,12 @@ features:
       - text: a fixture that fails in one scenario
         scope: scenario
         status: fail
-        error: 'fixture_test.go:149: fixture broke'
+        error: 'fixture_test.go:153: fixture broke'
     scenarios:
       - id: bad
         name: its background fails
         status: fail
-        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:149: fixture broke'
+        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:153: fixture broke'
         steps:
           - when: an action
             status: skip
@@ -166,7 +171,14 @@ features:
     test: TestFailureOutput
     feature: Failure output
     status: fail
-    duration: 770ms
+    duration: 400ms
+    log: |-
+      service.go:77: signet: service once-svc output:
+        bg-once-svc-out
+      command.go:234: signet: last 1 command(s):
+      $ /bin/sh -c "echo bg-once-cmd-out"  (exit 0, 53ms)
+      stdout:
+        bg-once-cmd-out
     background:
       - text: a shared service and command
         scope: feature
@@ -178,37 +190,58 @@ features:
       - id: later-step-fails
         name: background fixtures log their commands and service output when a later step fails
         status: fail
-        duration: 570ms
+        duration: 200ms
+        log: |-
+          command.go:234: signet: last 1 command(s):
+          $ /bin/sh -c "echo bg-each-cmd-out"  (exit 0, 37ms)
+          stdout:
+            bg-each-cmd-out
         steps:
           - when: the step fails
             status: fail
-            error: 'fixture_test.go:174: boom after background'
+            error: 'fixture_test.go:178: boom after background'
       - id: commands-in-steps
         name: a failed check logs its own commands, and the scenario logs those of its steps once
         status: fail
-        duration: 200ms
+        duration: 170ms
+        log: |-
+          command.go:234: signet: last 3 command(s):
+          $ /bin/sh -c "echo bg-each-cmd-out"  (exit 0, 34ms)
+          stdout:
+            bg-each-cmd-out
+          $ /bin/sh -c "echo given-cmd-out"  (exit 0, 38ms)
+          stdout:
+            given-cmd-out
+          $ /bin/sh -c "echo when-cmd-out"  (exit 0, 44ms)
+          stdout:
+            when-cmd-out
         steps:
           - given: a command in a Given
             status: pass
             duration: 40ms
           - when: a command in a When
             status: fail
-            duration: 130ms
+            duration: 100ms
             then:
               - text: a check with a command fails
                 status: fail
-                duration: 50ms
-                error: 'fixture_test.go:185: /bin/sh -c "echo then-cmd-out; exit 3": exit 3, want 0'
+                duration: 60ms
+                error: 'fixture_test.go:189: /bin/sh -c "echo then-cmd-out; exit 3": exit 3, want 0'
+                log: |-
+                  command.go:234: signet: last 1 command(s):
+                  $ /bin/sh -c "echo then-cmd-out; exit 3"  (exit 3, 57ms)
+                  stdout:
+                    then-cmd-out
   - package: github.com/kgatilin/signet/testdata/sdk
     test: TestStepResources
     feature: Step resources
     status: pass
-    duration: 130ms
+    duration: 160ms
     scenarios:
       - id: outlive-step
         name: what a Given or When creates lives until the scenario ends
         status: pass
-        duration: 130ms
+        duration: 160ms
         steps:
           - given: a temporary directory
             status: pass
@@ -221,8 +254,8 @@ features:
                 status: pass
           - when: a later action runs
             status: pass
-            duration: 10ms
+            duration: 20ms
             then:
               - text: the service of the earlier When is still running
                 status: pass
-                duration: 10ms
+                duration: 20ms
