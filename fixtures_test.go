@@ -137,6 +137,24 @@ func TestCmdTimeoutKillsProcessGroup(t *testing.T) {
 	}
 }
 
+// testing cancels t.Context() before it runs Cleanup functions, so a command
+// bound to that context alone would never start there.
+func TestCmdRunsInsideCleanup(t *testing.T) {
+	var teardown, slow *Result
+	t.Run("owner", func(t *testing.T) {
+		t.Cleanup(func() {
+			teardown = Cmd(t, "/bin/sh", "-c", "echo teardown-ran").Run()
+			slow = Cmd(t, "/bin/sh", "-c", "sleep 30").Timeout(200 * time.Millisecond).Run()
+		})
+	})
+	if teardown.Err != nil || teardown.ExitCode != 0 || !strings.Contains(teardown.Stdout, "teardown-ran") {
+		t.Errorf("teardown command: Err=%v ExitCode=%d Stdout=%q", teardown.Err, teardown.ExitCode, teardown.Stdout)
+	}
+	if !slow.TimedOut {
+		t.Errorf("a command in a cleanup ignored its Timeout: Err=%v ExitCode=%d", slow.Err, slow.ExitCode)
+	}
+}
+
 func TestCmdThatCannotStart(t *testing.T) {
 	r := Cmd(t, "/nonexistent/binary").Run()
 	if r.Err == nil || r.ExitCode != -1 {

@@ -414,6 +414,12 @@ backgrounds, step closures and builds do not run.
 | `Service(t, name, command, args...)` | Background process. Builder: `.Env`, `.Dir`, `.ReadyHTTP(url, status)` (0 = any status), `.ReadyLog(substring)`, `.ReadyTimeout(d)` (default 10s), then `.Start()`. Stopped with `SIGTERM`, then `SIGKILL` after 5s, when the owning test ends. `svc.Log()`, `svc.Stop()`. |
 | `FreePort(t)` | A TCP port on 127.0.0.1 that was free when asked. |
 
+A command is cancelled with `t.Context()`. `testing` cancels that context
+before it runs `t.Cleanup` functions, so a command run inside a cleanup
+(teardown through the CLI under test, `t.Cleanup(func() { app.Run(t, "delete",
+id).OK() })`) runs without it and is bounded by its `Timeout` alone. With
+`Timeout(0)` nothing bounds it there except the `-timeout` of the test binary.
+
 When a test fails, its last five commands and the output of the services it
 started are logged with it. The backgrounds, `Given` and `When` steps of a
 scenario share one command history, logged on the scenario when it fails

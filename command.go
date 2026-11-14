@@ -54,9 +54,16 @@ func (c *Command) Timeout(d time.Duration) *Command { c.timeout = d; return c }
 // non-zero or times out still returns a Result; checks on the Result decide
 // whether the step fails. When the test fails, the last commands it ran are
 // logged with their output.
+//
+// The command is cancelled with the test's context. Inside a Cleanup that
+// context is already cancelled, so there the command runs without it and
+// only Timeout bounds it.
 func (c *Command) Run() *Result {
 	c.t.Helper()
 	ctx := c.t.Context()
+	if ctx.Err() != nil {
+		ctx = context.WithoutCancel(ctx)
+	}
 	if c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)

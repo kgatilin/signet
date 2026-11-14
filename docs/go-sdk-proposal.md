@@ -462,7 +462,9 @@ What changed against the design above while building it:
 - **`signet report` exits 1** when a feature or package failed, so
   `go test -json | signet report` fails a CI step like `go test` would.
 - **Commands default to a 1 minute timeout** (`Timeout(0)` leaves only the
-  test deadline) and run in their own process group. A failing test logs its
+  test deadline) and run in their own process group. A command started
+  inside `t.Cleanup` runs although `testing` has already cancelled
+  `t.Context()`; there only its `Timeout` bounds it. A failing test logs its
   last five commands with their output; services log their output when the
   test that owns them failed. The command history is kept per owner: the
   backgrounds, `Given` and `When` steps of a scenario share one, logged on
