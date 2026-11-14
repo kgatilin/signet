@@ -395,6 +395,11 @@ it in the scenario (the checks are still registered, as skipped). A failed
 skipped. Subtest names are `Given …`, `When …`, `Then …`, `Background …`, so
 `go test -run 'TestStore/put-then-get'` selects one scenario.
 
+A scenario is the smallest unit `-run` and `-skip` can select. A pattern that
+reaches below it (`-run 'TestStore/put-then-get/Then'`) leaves out steps the
+scenario needs: the scenario fails with a message that names the first step
+that did not run, and its remaining steps are skipped.
+
 With `SIGNET_LIST=1`, every scenario and step is registered and skipped;
 backgrounds, step closures and builds do not run.
 

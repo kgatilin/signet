@@ -387,6 +387,8 @@ in `internal/proc`.
   their own module (to keep test dependencies out of the main `go.mod`),
   that is the test module, not the repository root; such a suite sets
   `SIGNET_BINARY` or passes absolute paths to `Subject`.
+- A single step cannot be run on its own: `-run` and `-skip` select whole
+  scenarios.
 - The text and number of steps cannot depend on the result of an earlier
   step. A loop over constants works; a loop over a server response does not.
 - Code in a feature or scenario body outside the step closures runs at
@@ -442,6 +444,17 @@ What changed against the design above while building it:
   would otherwise call `Fatal` on the scenario's `t` from the check's
   goroutine, which `testing` reports as "subtest may have called FailNow on a
   parent test". `In` rebinds the checks to the `Then`'s `t`.
+- **A scenario is the smallest unit `-run` selects.** `t.Run` returns true
+  without calling a subtest that `-run` or `-skip` leaves out, so a
+  filtered-out `BackgroundOnce` or `When` counted as passed and the remaining
+  steps ran without it. Every step subtest now records that it was started.
+  A step that should have run and was not started fails the scenario with a
+  message, and the remaining steps are skipped. `-failfast` gives the same
+  signal after a failure; it is recognised by the scenario having failed
+  already, or by neither `-run` nor `-skip` being set. With `-failfast`, a
+  filter and features running in parallel, a failure in another feature can
+  stop a scenario that has not failed itself, and that scenario reports the
+  filter message.
 - **The report is one document with a `features` list**, each entry carrying
   `package` and `test`, so one stream from many packages is one file.
   Backgrounds carry `status` and `error`; a scenario whose background failed

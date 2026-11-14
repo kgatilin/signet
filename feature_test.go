@@ -244,6 +244,84 @@ func TestFeatureRunFilterStartsBackgroundOnceInSelectedScenario(t *testing.T) {
 	}
 }
 
+// A -run or -skip pattern below the scenario level leaves steps out. t.Run
+// then returns true without calling them, so the scenario has to notice and
+// fail instead of running its other steps without the fixture or the action.
+func TestFeatureFilterBelowScenarioFailsTheScenario(t *testing.T) {
+	const hint = "-run '^TestPassing$/^one$'"
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		failed string // the test that carries the message
+		step   string // the step named in it
+		marks  []string
+	}{
+		{
+			name:   "background filtered out",
+			args:   []string{"-run", "^TestPassing$/^one$/^Then"},
+			failed: "TestPassing/one",
+			step:   `"Background a shared file"`,
+		},
+		{
+			name:   "action filtered out",
+			args:   []string{"-run", "^TestPassing$/^one$/^(Background|Given|Then)"},
+			failed: "TestPassing/one",
+			step:   `"When n doubles"`,
+			marks:  []string{"once", "each", "one/given", "each-cleanup"},
+		},
+		{
+			name:   "nested check filtered out",
+			args:   []string{"-run", "^TestPassing$/^one$/^(Background|Given|When)/^Then_n_is_two$"},
+			failed: "TestPassing/one/When_n_doubles",
+			step:   `"Then n is even"`,
+			marks:  []string{"once", "each", "one/given", "one/when", "each-cleanup"},
+		},
+		{
+			name:   "precondition skipped",
+			args:   []string{"-run", "^TestPassing$/^one$", "-skip", "^TestPassing$/^one$/^Given"},
+			failed: "TestPassing/one",
+			step:   `"Given n is one"`,
+			marks:  []string{"once", "each", "each-cleanup"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := runFixtures(t, nil, tc.args...)
+
+			run.expect(t, "TestPassing/one", "fail")
+			msg := strings.Join(run.expect(t, tc.failed, "fail").errors, "\n")
+			for _, want := range []string{"signet: step " + tc.step + " did not run", hint} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("%s errors = %q, want %q", tc.failed, msg, want)
+				}
+			}
+			if !slices.Equal(run.marks, tc.marks) {
+				t.Errorf("marks = %q, want %q", run.marks, tc.marks)
+			}
+			for name, ft := range run.tests {
+				if strings.Contains(name, "/Then_") && ft.status != "skip" && name != "TestPassing/one/When_n_doubles/Then_n_is_two" {
+					t.Errorf("%s: status %s, want skip", name, ft.status)
+				}
+			}
+		})
+	}
+}
+
+// -failfast makes t.Run skip steps in the same way after a failure; that is
+// not a filter problem and must not be reported as one.
+func TestFeatureFailFastIsNotReportedAsAFilter(t *testing.T) {
+	run := runFixtures(t, nil, "-failfast", "-run", "^TestStepFailures$/^then-fails$")
+
+	run.expect(t, "TestStepFailures/then-fails/When_the_action_passes/Then_the_first_check_fails", "fail")
+	if run.marked("then-fails/second") {
+		t.Error("-failfast did not stop the sibling check; the fixture no longer covers this case")
+	}
+	for name, ft := range run.tests {
+		if msg := strings.Join(ft.errors, "\n"); strings.Contains(msg, "did not run") {
+			t.Errorf("%s: %s", name, msg)
+		}
+	}
+}
+
 func TestFeatureListModeRegistersWithoutRunning(t *testing.T) {
 	run := runFixtures(t, []string{ListEnv + "=1"})
 

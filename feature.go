@@ -2,6 +2,7 @@ package signet
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -163,13 +164,18 @@ func (f *F) runBackgrounds(t *testing.T) bool {
 			if bg.ran {
 				continue
 			}
-			bg.ran = true
 			owner = f.t
 		}
-		ok := t.Run("Background "+bg.text, func(bt *testing.T) {
+		title := "Background " + bg.text
+		called, ok := subtest(t, title, func(bt *testing.T) {
 			backgroundAttrs(bt, bg)
 			runScoped(bt, owner, bg.fn)
 		})
+		if !called {
+			notStarted(t, t, title)
+			return false
+		}
+		bg.ran = true
 		if !ok {
 			if bg.once {
 				f.onceFailed = true
@@ -313,6 +319,45 @@ func (s *Scenario) newStep(st *step) *step {
 	return st
 }
 
+// subtest runs fn as a subtest of t. called is false when go test did not
+// start it: t.Run returns true without calling fn for a name that -run or
+// -skip leaves out, and for every name once -failfast has seen a failure.
+func subtest(t *testing.T, name string, fn func(*testing.T)) (called, ok bool) {
+	ok = t.Run(name, func(t *testing.T) {
+		called = true
+		fn(t)
+	})
+	return called, ok
+}
+
+// notStarted fails parent when go test did not start its step title although
+// the scenario sc needed it to run. A scenario whose fixture or action is
+// filtered out would otherwise run its remaining steps against a state that
+// was never set up, and pass or fail for the wrong reason. Nothing is
+// reported when the parent has already failed or no filter is set: then
+// -failfast stopped the run.
+func notStarted(parent, sc *testing.T, title string) {
+	if parent.Failed() || !filtered() {
+		return
+	}
+	parts := strings.Split(sc.Name(), "/")
+	for i, part := range parts {
+		parts[i] = "^" + part + "$"
+	}
+	parent.Errorf("signet: step %q did not run: -run or -skip leaves it out, and the rest of the scenario is skipped. "+
+		"A scenario is the smallest unit they can select: -run '%s'", title, strings.Join(parts, "/"))
+}
+
+// filtered reports whether go test was given a -run or -skip pattern.
+func filtered() bool {
+	for _, name := range []string{"test.run", "test.skip"} {
+		if f := flag.Lookup(name); f != nil && f.Value.String() != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // runSteps runs the steps in order. After a failure, later Given and When
 // steps are skipped; a Then runs only when its own block's action succeeded.
 // blocked registers every step as skipped.
@@ -324,7 +369,7 @@ func runSteps(sc *testing.T, steps []*step, blocked bool) {
 		if st.keyword == attrs.KeywordThen {
 			run = blockOK
 		}
-		ok := sc.Run(stepTitle(st), func(t *testing.T) {
+		called, ok := subtest(sc, stepTitle(st), func(t *testing.T) {
 			if st.keyword == attrs.KeywordWhen {
 				runWhen(t, sc, st, run)
 				return
@@ -335,6 +380,11 @@ func runSteps(sc *testing.T, steps []*step, blocked bool) {
 			}
 			st.run(t, sc)
 		})
+		if run && !called {
+			notStarted(sc, sc, stepTitle(st))
+			failed, blockOK = true, false
+			continue
+		}
 		if run && !ok {
 			failed = true
 		}
@@ -353,13 +403,18 @@ func runWhen(t, sc *testing.T, st *step, run bool) {
 	defer func() {
 		thenRun := returned && !t.Failed() && !t.Skipped()
 		for _, th := range st.thens {
-			t.Run(stepTitle(th), func(t *testing.T) {
+			run := thenRun
+			called, _ := subtest(t, stepTitle(th), func(t *testing.T) {
 				stepAttrs(t, th)
-				if !thenRun {
+				if !run {
 					t.SkipNow()
 				}
 				th.fn(t)
 			})
+			if run && !called {
+				notStarted(t, sc, stepTitle(th))
+				thenRun = false
+			}
 		}
 	}()
 	if !run {
