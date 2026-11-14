@@ -29,4 +29,4 @@ examples-report: build
 	go -C examples test -json -count=1 ./... | ./$(BIN_DIR)/$(BINARY) report
 
 clean:
-	rm -rf $(BIN_DIR) examples/bin
+	rm -rf $(BIN_DIR) $(BINARY) examples/bin
