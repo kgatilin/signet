@@ -70,8 +70,8 @@ the step closures. The same code therefore serves two modes: a normal run, and
 a listing (`SIGNET_LIST=1`) that produces the document without executing
 anything or building the binary.
 
-Assertions are not part of signet. Step closures receive `*testing.T`, so
-testify or plain `if` works.
+Assertions are not part of signet. Step closures receive a `testing.TB`
+(`Given`, `When`) or a `*testing.T` (`Then`), so testify or plain `if` works.
 
 ## What already exists
 
@@ -146,8 +146,8 @@ func (f *F) BackgroundOnce(text string, fn func(t testing.TB))
 func (f *F) Background(text string, fn func(t testing.TB))
 func (f *F) Scenario(id, name string, body func(s *Scenario))
 
-func (s *Scenario) Given(text string, fn func(t *testing.T))
-func (s *Scenario) When(text string, fn func(t *testing.T)) *Block
+func (s *Scenario) Given(text string, fn func(t testing.TB))
+func (s *Scenario) When(text string, fn func(t testing.TB)) *Block
 func (s *Scenario) Then(text string, fn func(t *testing.T)) // for scenarios with no When
 func (b *Block) Then(text string, fn func(t *testing.T)) *Block
 ```
@@ -165,16 +165,18 @@ How it maps onto `testing`:
     scenario starts nothing and `go test -run TestX/case-id` still gets its
     fixture. Its `fn` receives a `testing.TB` that wraps the feature's `t`:
     `Cleanup` registers on the feature, so services live until the feature
-    ends, and `FailNow` is intercepted. The signature differs from steps
-    (`*testing.T`) for that reason: a raw feature `t` failing inside a
-    scenario's goroutine makes `testing` report "subtest may have called
-    FailNow on a parent test" instead of the cause.
+    ends, and `FailNow` is intercepted. The parameter is a wrapper for that
+    reason: a raw feature `t` failing inside a scenario's goroutine makes
+    `testing` report "subtest may have called FailNow on a parent test"
+    instead of the cause.
   - `Background` runs inside each scenario's `t.Run(id)` before its steps,
     as a subtest of the scenario. Its `fn` receives a `testing.TB` whose
     resources belong to the scenario, the same way `BackgroundOnce` resources
     belong to the feature.
 - A `Given` or `When` is a subtest of the scenario; each `Then` on a `Block`
-  is a subtest of its `When`. The keyword and text are attributes.
+  is a subtest of its `When`. The keyword and text are attributes. `Given`
+  and `When` receive a `testing.TB` whose resources belong to the scenario,
+  like `Background`; a `Then` receives its own `*testing.T`.
 
 Execution rules:
 
@@ -223,7 +225,7 @@ func TestScheduling(t *testing.T) {
                     session  string
                 )
 
-                s.When("the timer fires for job reminder and the conversation settles", func(t *testing.T) {
+                s.When("the timer fires for job reminder and the conversation settles", func(t testing.TB) {
                     require.EventuallyWithT(t, func(c *assert.CollectT) {
                         fired = events.First[events.TimerFired](c, log.Records(c, "channel.scheduler.>"),
                             func(e events.TimerFired) bool { return e.Job == "reminder" })
@@ -260,10 +262,10 @@ func TestScheduling(t *testing.T) {
                 "operator cancellation closes a conversation waiting on an offline worker", func(s *signet.Scenario) {
                 var thread string
 
-                s.When("the timer fires for job slow-reminder", func(t *testing.T) { /* sets thread */ }).
+                s.When("the timer fires for job slow-reminder", func(t testing.TB) { /* sets thread */ }).
                     Then("the turn is pending on the offline worker", func(t *testing.T) { /* ... */ })
 
-                s.When("the operator requests cancellation of the thread", func(t *testing.T) {
+                s.When("the operator requests cancellation of the thread", func(t testing.TB) {
                     app.Run(t, "send", "cancel", "--thread", thread).OK()
                 }).
                     Then("the message is closed as cancelled", func(t *testing.T) { /* ... */ }).
@@ -424,9 +426,22 @@ What changed against the design above while building it:
   kinds now get a `testing.TB` whose `Cleanup`, `TempDir`, `Setenv`, `Chdir`,
   `Context` and `ArtifactDir` belong to their scope; failures still go to the
   background step.
-- **`Result.In(t)`.** A `Then` that checks the result of its `When` would
-  otherwise call `Fatal` on the `When`'s `t` from another goroutine. `In`
-  rebinds the checks to the `Then`'s `t`.
+- **`Given` and `When` receive `testing.TB` too; `Then` keeps `*testing.T`.**
+  Every step is a subtest, so with the subtest's `t` a temporary directory
+  made in a `Given` was removed before the next step ran, and a service
+  started in a `When` was stopped after that block's `Then` checks. `Given`
+  and `When` now get the same wrapper as `Background`, owned by the scenario.
+  The parameter type is the rule: `testing.TB` means what the step creates
+  outlives it, `*testing.T` means the check owns its resources. The wrapper
+  sends failures and logs to the step while it runs and to the owner once
+  the step has returned, so a failed check in a cleanup the step registered
+  fails the scenario. Such a late failure is reported with the line inside
+  signet (`command.go:NNN`) when it comes from a `Result` check, because
+  `t.Helper` marks are kept per test and the owner does not have the step's.
+- **`Result.In(t)`.** A `Then` that checks the result of a `Given` or `When`
+  would otherwise call `Fatal` on the scenario's `t` from the check's
+  goroutine, which `testing` reports as "subtest may have called FailNow on a
+  parent test". `In` rebinds the checks to the `Then`'s `t`.
 - **The report is one document with a `features` list**, each entry carrying
   `package` and `test`, so one stream from many packages is one file.
   Backgrounds carry `status` and `error`; a scenario whose background failed
@@ -436,7 +451,9 @@ What changed against the design above while building it:
 - **Commands default to a 1 minute timeout** (`Timeout(0)` leaves only the
   test deadline) and run in their own process group. A failing test logs its
   last five commands with their output; services log their output when the
-  test that owns them failed.
+  test that owns them failed. The command history is kept per owner: the
+  backgrounds, `Given` and `When` steps of a scenario share one, logged on
+  the scenario, and a `Then` has its own.
 - **Polling inside `require.EventuallyWithT`.** testify runs the condition in
   another goroutine, so `Result` checks (which call `Fatal`) must not be used
   there; read the `Result` fields, or poll an HTTP endpoint with `assert`

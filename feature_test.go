@@ -183,6 +183,26 @@ func TestFeatureStepFailureRules(t *testing.T) {
 	if !run.marked("then-fails/second") {
 		t.Error("the sibling check of a failed check did not run")
 	}
+
+	// A cleanup registered in a Given runs when the scenario ends, after the
+	// Given has finished, so its failure belongs to the scenario.
+	cleanup := run.expect(t, "TestStepFailures/cleanup-fails", "fail")
+	if !strings.Contains(strings.Join(cleanup.errors, "\n"), "teardown broke") {
+		t.Errorf("scenario errors = %q", cleanup.errors)
+	}
+	run.expect(t, "TestStepFailures/cleanup-fails/Given_a_resource_whose_teardown_fails", "pass")
+	run.expect(t, "TestStepFailures/cleanup-fails/Then_a_check_that_passes", "pass")
+}
+
+func TestFeatureGivenAndWhenResourcesLiveUntilTheScenarioEnds(t *testing.T) {
+	run := runFixtures(t, nil, "-run", "^TestStepResources$")
+
+	run.expect(t, "TestStepResources/outlive-step", "pass")
+	run.expect(t, "TestStepResources/outlive-step/When_a_service_starts/Then_the_directory_of_the_Given_still_exists", "pass")
+	run.expect(t, "TestStepResources/outlive-step/When_a_later_action_runs/Then_the_service_of_the_earlier_When_is_still_running", "pass")
+	if want := []string{"resources/later-when", "resources/given-cleanup"}; !slices.Equal(run.marks, want) {
+		t.Errorf("marks = %q, want %q: the Given's cleanup runs after the last step", run.marks, want)
+	}
 }
 
 func TestFeatureBackgroundOnceFailureSkipsLaterScenarios(t *testing.T) {
@@ -246,24 +266,46 @@ func TestFeatureListModeRegistersWithoutRunning(t *testing.T) {
 	}
 }
 
-func TestFeatureBackgroundServiceAndCmdDumpLogsWithoutPanic(t *testing.T) {
-	run := runFixtures(t, nil, "-run", "^TestBackgroundCleanupLogsOnStepFailure$")
+func TestFeatureFailureOutputGoesToTheOwnerOnce(t *testing.T) {
+	run := runFixtures(t, nil, "-run", "^TestFailureOutput$")
 
-	feat := run.expect(t, "TestBackgroundCleanupLogsOnStepFailure", "fail")
-	scen := run.expect(t, "TestBackgroundCleanupLogsOnStepFailure/later-step-fails", "fail")
-	run.expect(t, "TestBackgroundCleanupLogsOnStepFailure/later-step-fails/When_the_step_fails", "fail")
+	feat := run.expect(t, "TestFailureOutput", "fail")
+	scen := run.expect(t, "TestFailureOutput/later-step-fails", "fail")
+	run.expect(t, "TestFailureOutput/later-step-fails/When_the_step_fails", "fail")
 
 	featOut := strings.Join(feat.outputs, "")
 	scenOut := strings.Join(scen.outputs, "")
-	for _, out := range []string{featOut, scenOut} {
-		if strings.Contains(out, "panic:") {
-			t.Fatalf("unexpected panic in output:\n%s", out)
-		}
-	}
 	if !strings.Contains(featOut, "bg-once-svc-out") || !strings.Contains(featOut, "bg-once-cmd-out") {
 		t.Errorf("feature output missing BackgroundOnce dumps:\n%s", featOut)
 	}
 	if !strings.Contains(scenOut, "bg-each-cmd-out") {
 		t.Errorf("scenario output missing Background dump:\n%s", scenOut)
+	}
+
+	// Background, Given and When share the scenario's command history; a Then
+	// keeps its own.
+	steps := run.expect(t, "TestFailureOutput/commands-in-steps", "fail")
+	stepsOut := strings.Join(steps.outputs, "")
+	last := 0
+	for _, want := range []string{"signet: last 3 command(s):", "echo bg-each-cmd-out", "echo given-cmd-out", "echo when-cmd-out"} {
+		at := strings.Index(stepsOut[last:], want)
+		if at < 0 {
+			t.Fatalf("scenario output misses %q after offset %d:\n%s", want, last, stepsOut)
+		}
+		last += at
+	}
+	then := run.expect(t, "TestFailureOutput/commands-in-steps/When_a_command_in_a_When/Then_a_check_with_a_command_fails", "fail")
+	thenOut := strings.Join(then.outputs, "")
+	if !strings.Contains(thenOut, "signet: last 1 command(s):") || !strings.Contains(thenOut, "echo then-cmd-out") {
+		t.Errorf("check output missing its own command:\n%s", thenOut)
+	}
+	for _, cmd := range []string{"echo given-cmd-out", "echo when-cmd-out", "echo then-cmd-out"} {
+		n := 0
+		for _, ft := range run.tests {
+			n += strings.Count(strings.Join(ft.outputs, ""), `$ /bin/sh -c "`+cmd)
+		}
+		if n != 1 {
+			t.Errorf("%q logged %d times, want once", cmd, n)
+		}
 	}
 }

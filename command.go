@@ -202,7 +202,9 @@ const (
 	dumpBytes    = 2048
 )
 
-// histories keeps the last commands run by each test, to log them when it fails.
+// histories keeps the last commands run by each test, to log them when it
+// fails. Backgrounds, Given and When share the history of their owner, so a
+// failed scenario logs the commands of its steps once, in the order they ran.
 var histories sync.Map // testing.TB -> *history
 
 type history struct {
@@ -211,6 +213,9 @@ type history struct {
 }
 
 func record(t testing.TB, r *Result) {
+	if w, ok := t.(scopedTB); ok {
+		t = w.owner
+	}
 	value, loaded := histories.LoadOrStore(t, &history{})
 	h := value.(*history)
 	if !loaded {

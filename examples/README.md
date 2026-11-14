@@ -16,7 +16,7 @@ SIGNET_LIST=1 go -C examples test -json ./... | signet report   # document only,
 | `acceptance/kv_test.go` | `Subject` built once from this module's root, a `Service` with HTTP and log readiness, helpers that poll the event log with `require.EventuallyWithT` |
 | `acceptance/cli_test.go` | scenarios with only `Then` checks, a `When` whose `Result` its `Then` checks read through `res.In(t)`, `Cmd` with `Env`, an arbitrary command (`go version -m`) |
 | `acceptance/store_test.go` | `BackgroundOnce` sharing one server across scenarios, waiting in `When`, several `When` blocks in one scenario, `Given`, `Stdin` |
-| `acceptance/isolation_test.go` | `Background` starting a fresh server for every scenario |
+| `acceptance/isolation_test.go` | `Background` starting a fresh server for every scenario, a `Given` starting a server that lives until its scenario ends |
 
 The module points at the SDK in the parent directory through a `replace`
 directive, so it always tests the current checkout.

@@ -913,7 +913,7 @@ cases:
               - 'CASE id=one name="every step kind passes" (6 steps)'
               - 'CASE id=two name="the shared background ran once" (4 steps)'
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestStepFailures Step failures"
-              - "5 groups, 11 cases, 29 steps"
+              - "6 groups, 14 cases, 39 steps"
 
   - id: report-invalid-format
     name: report rejects an unknown format
@@ -940,7 +940,7 @@ cases:
             orderedContains:
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestPassing Passing feature"
               - "GROUP github.com/kgatilin/signet/testdata/sdk TestBackgroundFails Broken per-scenario background"
-              - "5 groups, 11 cases, 29 steps"
+              - "6 groups, 14 cases, 39 steps"
 
   - id: examples-list
     name: the examples module lists its features without building or running kv
@@ -958,7 +958,7 @@ cases:
               - "GROUP github.com/kgatilin/signet/examples/acceptance TestServerPerScenario Server per scenario"
               - "GROUP github.com/kgatilin/signet/examples/acceptance TestStore Key-value store"
               - 'CASE id=overwrite name="a second write replaces the first" (5 steps)'
-              - "3 groups, 11 cases, 35 steps"
+              - "3 groups, 12 cases, 39 steps"
 
   - id: examples-run
     name: the examples pass and their report has no failure

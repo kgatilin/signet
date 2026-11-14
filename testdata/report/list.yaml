@@ -96,6 +96,14 @@ features:
             then:
               - text: its check
                 status: skip
+      - id: cleanup-fails
+        name: a failed cleanup registered in a Given fails the scenario
+        status: skip
+        steps:
+          - given: a resource whose teardown fails
+            status: skip
+          - then: a check that passes
+            status: skip
   - package: github.com/kgatilin/signet/testdata/sdk
     test: TestBackgroundOnceFails
     feature: Broken background
@@ -142,8 +150,8 @@ features:
           - when: an action
             status: skip
   - package: github.com/kgatilin/signet/testdata/sdk
-    test: TestBackgroundCleanupLogsOnStepFailure
-    feature: Background cleanup logging
+    test: TestFailureOutput
+    feature: Failure output
     status: skip
     background:
       - text: a shared service and command
@@ -159,3 +167,35 @@ features:
         steps:
           - when: the step fails
             status: skip
+      - id: commands-in-steps
+        name: a failed check logs its own commands, and the scenario logs those of its steps once
+        status: skip
+        steps:
+          - given: a command in a Given
+            status: skip
+          - when: a command in a When
+            status: skip
+            then:
+              - text: a check with a command fails
+                status: skip
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestStepResources
+    feature: Step resources
+    status: skip
+    scenarios:
+      - id: outlive-step
+        name: what a Given or When creates lives until the scenario ends
+        status: skip
+        steps:
+          - given: a temporary directory
+            status: skip
+          - when: a service starts
+            status: skip
+            then:
+              - text: the directory of the Given still exists
+                status: skip
+          - when: a later action runs
+            status: skip
+            then:
+              - text: the service of the earlier When is still running
+                status: skip

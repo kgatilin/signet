@@ -22,7 +22,7 @@ func TestStore(t *testing.T) {
 
 			f.Scenario("put-then-get", "an accepted write becomes readable once applied", func(s *signet.Scenario) {
 				var put *signet.Result
-				s.When("a client puts greeting=hello and the write is applied", func(t *testing.T) {
+				s.When("a client puts greeting=hello and the write is applied", func(t testing.TB) {
 					put = srv.run(t, "put", "greeting", "hello").OK()
 					srv.awaitApplied(t, "put", "greeting", 1)
 				}).
@@ -43,7 +43,7 @@ func TestStore(t *testing.T) {
 
 			f.Scenario("missing-key", "reading a key nobody wrote fails with the key in the message", func(s *signet.Scenario) {
 				var res *signet.Result
-				s.When("a client gets a key nobody wrote", func(t *testing.T) {
+				s.When("a client gets a key nobody wrote", func(t testing.TB) {
 					res = srv.run(t, "get", "nobody")
 				}).
 					Then("it exits 1", func(t *testing.T) { res.In(t).Exit(1) }).
@@ -51,14 +51,14 @@ func TestStore(t *testing.T) {
 			})
 
 			f.Scenario("overwrite", "a second write replaces the first", func(s *signet.Scenario) {
-				s.When("a client puts colour=red and it is applied", func(t *testing.T) {
+				s.When("a client puts colour=red and it is applied", func(t testing.TB) {
 					srv.run(t, "put", "colour", "red").OK()
 					srv.awaitApplied(t, "put", "colour", 1)
 				}).
 					Then("get returns red", func(t *testing.T) {
 						assert.Equal(t, "red\n", srv.run(t, "get", "colour").OK().Stdout)
 					})
-				s.When("a client puts colour=blue and it is applied", func(t *testing.T) {
+				s.When("a client puts colour=blue and it is applied", func(t testing.TB) {
 					srv.run(t, "put", "colour", "blue").OK()
 					srv.awaitApplied(t, "put", "colour", 2)
 				}).
@@ -73,11 +73,11 @@ func TestStore(t *testing.T) {
 			})
 
 			f.Scenario("delete", "a deleted key is gone once the delete is applied", func(s *signet.Scenario) {
-				s.Given("shape=circle is applied", func(t *testing.T) {
+				s.Given("shape=circle is applied", func(t testing.TB) {
 					srv.run(t, "put", "shape", "circle").OK()
 					srv.awaitApplied(t, "put", "shape", 1)
 				})
-				s.When("a client deletes shape and the delete is applied", func(t *testing.T) {
+				s.When("a client deletes shape and the delete is applied", func(t testing.TB) {
 					srv.run(t, "del", "shape").OK().StdoutContains("accepted del shape")
 					srv.awaitApplied(t, "del", "shape", 1)
 				}).
@@ -89,7 +89,7 @@ func TestStore(t *testing.T) {
 			})
 
 			f.Scenario("value-from-stdin", "put reads a multi-line value from stdin", func(s *signet.Scenario) {
-				s.When("a client pipes two lines into put note", func(t *testing.T) {
+				s.When("a client pipes two lines into put note", func(t testing.TB) {
 					srv.cmd(t, "put", "note", "-").Stdin("line one\nline two").Run().OK()
 					srv.awaitApplied(t, "put", "note", 1)
 				}).

@@ -330,8 +330,9 @@ executing it.
 that run under `go test`. A test function declares one feature; scenarios and
 steps become subtests whose keyword and text are recorded with `t.Attr`, so
 `signet report` can rebuild the document from `go test -json`. Assertions are
-not part of the SDK: steps receive `*testing.T`, so testify or plain `if`
-works. A complete module that uses it is in [`examples/`](examples/).
+not part of the SDK: steps receive a `testing.TB` or a `*testing.T`, so
+testify or plain `if` works. A complete module that uses it is in
+[`examples/`](examples/).
 
 ```go
 var app = signet.Subject("go build -o bin/app ./cmd/app", "bin/app")
@@ -349,7 +350,7 @@ func TestStore(t *testing.T) {
 
         f.Scenario("put-then-get", "a write becomes readable once applied", func(s *signet.Scenario) {
             var put *signet.Result
-            s.When("a client puts greeting=hello and it is applied", func(t *testing.T) {
+            s.When("a client puts greeting=hello and it is applied", func(t testing.TB) {
                 put = app.Cmd(t, "put", "greeting", "hello").Env("SERVER=" + url).Run().OK()
                 // wait here (e.g. require.EventuallyWithT) until the state settles
             }).
@@ -375,9 +376,18 @@ SIGNET_LIST=1 go test -json -count=1 ./acceptance/... | signet report # the docu
 | `f.BackgroundOnce(text, fn)` | Shared fixture. Runs once, as a step of the first scenario that executes. `fn` gets a `testing.TB` whose `Cleanup`, `TempDir`, `Setenv`, `Chdir`, `Context` and `ArtifactDir` belong to the feature. If it fails, its scenario fails and later scenarios are skipped. |
 | `f.Background(text, fn)` | Fixture run in every scenario before its steps; its resources belong to the scenario. |
 | `f.Scenario(id, name, body)` | `id` is the subtest name: unique, no whitespace or slash. `body` only registers steps. |
-| `s.Given(text, fn)` | Precondition. |
-| `s.When(text, fn).Then(text, fn)...` | Action, then checks nested under it. Waiting until the system settles belongs in the `When`. |
-| `s.Then(text, fn)` | Check directly on the scenario, for scenarios without `When`. |
+| `s.Given(text, fn)` | Precondition. `fn` gets a `testing.TB` whose resources belong to the scenario. |
+| `s.When(text, fn).Then(text, fn)...` | Action, then checks nested under it. Waiting until the system settles belongs in the `When`. The `When` gets a `testing.TB` like `Given`, each `Then` its own `*testing.T`. |
+| `s.Then(text, fn)` | Check directly on the scenario, for scenarios without `When`. `fn` gets its own `*testing.T`. |
+
+The parameter type says who owns what a step creates. `testing.TB`
+(backgrounds, `Given`, `When`) means it outlives the step: `t.TempDir()`,
+`t.Cleanup`, `t.Setenv`, `t.Chdir`, `t.Context()`, `t.ArtifactDir()` and a
+`Service` started with that `t` belong to the scenario (to the feature for
+`BackgroundOnce`) and end with it. `*testing.T` (`Then`) means the check owns
+its resources, and they end with the check. Failures and logs go to the step
+while it runs. A failure raised after the step has returned, in a cleanup it
+registered, fails the scenario (the feature for `BackgroundOnce`).
 
 Execution rules: a failed background, `Given` or `When` skips everything after
 it in the scenario (the checks are still registered, as skipped). A failed
@@ -395,12 +405,15 @@ backgrounds, step closures and builds do not run.
 | `Subject(buildShell, binaryPath)` | The binary under test. The build runs with `/bin/sh` in the module root (nearest `go.mod`), once per test process, on first use. A relative path resolves against the same root. With `SIGNET_BINARY=<absolute path>` nothing is built. |
 | `app.Path(t)`, `app.Run(t, args...)`, `app.Cmd(t, args...)`, `app.Service(t, name, args...)` | Use the subject. |
 | `Cmd(t, name, args...)` | Any command. Builder: `.Env(kv...)`, `.Dir(dir)`, `.Stdin(s)`, `.Timeout(d)` (default 1m, 0 = test deadline only), then `.Run()`. Runs in its own process group. |
-| `Result` | `ExitCode`, `Stdout`, `Stderr`, `Duration`, `TimedOut`, `Err`; checks `.OK()`, `.Exit(code)`, `.StdoutContains(s)`, `.StderrContains(s)` fail the test the command ran in. `res.In(t)` rebinds the checks to another step's `t`. `JSON[T](res)` decodes stdout. |
+| `Result` | `ExitCode`, `Stdout`, `Stderr`, `Duration`, `TimedOut`, `Err`; checks `.OK()`, `.Exit(code)`, `.StdoutContains(s)`, `.StderrContains(s)` fail the test the command ran in. `res.In(t)` rebinds the checks to another step's `t`; a `Then` that checks the `Result` of a `Given` or `When` needs it. `JSON[T](res)` decodes stdout. |
 | `Service(t, name, command, args...)` | Background process. Builder: `.Env`, `.Dir`, `.ReadyHTTP(url, status)` (0 = any status), `.ReadyLog(substring)`, `.ReadyTimeout(d)` (default 10s), then `.Start()`. Stopped with `SIGTERM`, then `SIGKILL` after 5s, when the owning test ends. `svc.Log()`, `svc.Stop()`. |
 | `FreePort(t)` | A TCP port on 127.0.0.1 that was free when asked. |
 
 When a test fails, its last five commands and the output of the services it
-started are logged with it.
+started are logged with it. The backgrounds, `Given` and `When` steps of a
+scenario share one command history, logged on the scenario when it fails
+(`BackgroundOnce` commands are logged on the feature); a `Then` logs its own
+commands.
 
 `go test` caches results and does not track the external binary, so run
 acceptance packages with `-count=1`. Go's per-package processes each build the

@@ -68,7 +68,7 @@ func TestRunDocument(t *testing.T) {
 	if !doc.Failed() || len(doc.FailedPackages) != 1 {
 		t.Fatalf("Failed=%v packages=%v", doc.Failed(), doc.FailedPackages)
 	}
-	if len(doc.Features) != 5 {
+	if len(doc.Features) != 6 {
 		t.Fatalf("features = %d", len(doc.Features))
 	}
 

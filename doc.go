@@ -13,6 +13,11 @@
 // starts a background process that is stopped when the test ends, and
 // FreePort picks a TCP port.
 //
-// Assertions are not part of the package: steps receive *testing.T, so
-// testify or plain if statements work.
+// Backgrounds, Given and When receive a testing.TB: what they create (a
+// temporary directory, a service, a Cleanup) lives until the scenario ends,
+// or the feature for BackgroundOnce. Then receives its own *testing.T, and
+// what a check creates ends with the check.
+//
+// Assertions are not part of the package: testify or plain if statements
+// work with either parameter.
 package signet

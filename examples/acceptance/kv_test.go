@@ -64,7 +64,7 @@ func (s *server) events(c assert.TestingT) []event {
 }
 
 // awaitApplied waits until the event log has n applied events of op for key.
-func (s *server) awaitApplied(t *testing.T, op, key string, n int) {
+func (s *server) awaitApplied(t testing.TB, op, key string, n int) {
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		assert.Len(c, filter(s.events(c), op+".applied", key), n)
 	}, 5*time.Second, 50*time.Millisecond)

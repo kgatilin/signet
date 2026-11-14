@@ -168,9 +168,7 @@ func (f *F) runBackgrounds(t *testing.T) bool {
 		}
 		ok := t.Run("Background "+bg.text, func(bt *testing.T) {
 			backgroundAttrs(bt, bg)
-			var done atomic.Bool
-			defer done.Store(true)
-			bg.fn(scopedTB{T: bt, owner: owner, done: &done})
+			runScoped(bt, owner, bg.fn)
 		})
 		if !ok {
 			if bg.once {
@@ -192,14 +190,23 @@ func backgroundAttrs(t *testing.T, bg *background) {
 	t.Attr(attrs.Text, attrs.Escape(bg.text))
 }
 
-// scopedTB is the testing.TB given to backgrounds: failures and logs go to the
-// background step while it runs, and to the owner (feature or scenario) once
-// the background step finishes, so resources and Cleanup hooks started in a
-// background safely outlive the background step.
+// scopedTB is the testing.TB given to backgrounds, Given and When: what the
+// step creates belongs to its owner (the feature for BackgroundOnce, the
+// scenario for the others), so Cleanup, TempDir, Setenv, Chdir, Context and
+// ArtifactDir outlive the step. Failures and logs go to the step while it
+// runs and to the owner once it has returned, which is where a Cleanup
+// registered through it runs.
 type scopedTB struct {
 	*testing.T
 	owner *testing.T
 	done  *atomic.Bool
+}
+
+// runScoped runs fn as the step t with resources owned by owner.
+func runScoped(t, owner *testing.T, fn func(testing.TB)) {
+	var done atomic.Bool
+	defer done.Store(true)
+	fn(scopedTB{T: t, owner: owner, done: &done})
 }
 
 func (w scopedTB) live() *testing.T {
@@ -219,6 +226,20 @@ func (w scopedTB) Failed() bool                    { return w.T.Failed() || w.ow
 func (w scopedTB) Log(args ...any)                 { w.live().Helper(); w.live().Log(args...) }
 func (w scopedTB) Logf(format string, args ...any) { w.live().Helper(); w.live().Logf(format, args...) }
 func (w scopedTB) Output() io.Writer               { return w.live().Output() }
+func (w scopedTB) Fail()                           { w.live().Fail() }
+func (w scopedTB) FailNow()                        { w.live().FailNow() }
+func (w scopedTB) Error(args ...any)               { w.live().Helper(); w.live().Error(args...) }
+func (w scopedTB) Fatal(args ...any)               { w.live().Helper(); w.live().Fatal(args...) }
+
+func (w scopedTB) Errorf(format string, args ...any) {
+	w.live().Helper()
+	w.live().Errorf(format, args...)
+}
+
+func (w scopedTB) Fatalf(format string, args ...any) {
+	w.live().Helper()
+	w.live().Fatalf(format, args...)
+}
 
 // Scenario registers the steps of one scenario.
 type Scenario struct {
@@ -227,11 +248,22 @@ type Scenario struct {
 	sealed bool
 }
 
+// step is a Given or When (scoped is set) or a Then (fn is set).
 type step struct {
 	keyword string
 	text    string
+	scoped  func(testing.TB)
 	fn      func(*testing.T)
 	thens   []*step
+}
+
+// run calls the step's function as the subtest t of the scenario owner.
+func (st *step) run(t, owner *testing.T) {
+	if st.scoped != nil {
+		runScoped(t, owner, st.scoped)
+		return
+	}
+	st.fn(t)
 }
 
 // Block is a When step; Then adds checks that run after it succeeds.
@@ -240,45 +272,51 @@ type Block struct {
 	when *step
 }
 
-// Given registers a precondition step.
-func (s *Scenario) Given(text string, fn func(t *testing.T)) {
-	s.steps = append(s.steps, s.newStep(attrs.KeywordGiven, text, fn))
+// Given registers a precondition step. fn receives a testing.TB whose
+// Cleanup, TempDir, Setenv, Chdir, Context and ArtifactDir belong to the
+// scenario, so what it creates lives until the scenario ends.
+func (s *Scenario) Given(text string, fn func(t testing.TB)) {
+	s.steps = append(s.steps, s.newStep(&step{keyword: attrs.KeywordGiven, text: text, scoped: fn}))
 }
 
 // When registers an action. Waiting until the system settles belongs here, so
-// its Then checks read a settled state.
-func (s *Scenario) When(text string, fn func(t *testing.T)) *Block {
-	st := s.newStep(attrs.KeywordWhen, text, fn)
+// its Then checks read a settled state. fn receives a testing.TB that owns
+// resources the way Given's does: what it starts lives until the scenario
+// ends.
+func (s *Scenario) When(text string, fn func(t testing.TB)) *Block {
+	st := s.newStep(&step{keyword: attrs.KeywordWhen, text: text, scoped: fn})
 	s.steps = append(s.steps, st)
 	return &Block{s: s, when: st}
 }
 
-// Then registers a check directly on the scenario, for scenarios without When.
+// Then registers a check directly on the scenario, for scenarios without
+// When. fn receives the check's own *testing.T: what it creates ends with the
+// check.
 func (s *Scenario) Then(text string, fn func(t *testing.T)) {
-	s.steps = append(s.steps, s.newStep(attrs.KeywordThen, text, fn))
+	s.steps = append(s.steps, s.newStep(&step{keyword: attrs.KeywordThen, text: text, fn: fn}))
 }
 
 // Then registers a check that runs as a subtest of the When after it
 // succeeds. A failed check does not stop the other checks of the block.
 func (b *Block) Then(text string, fn func(t *testing.T)) *Block {
-	b.when.thens = append(b.when.thens, b.s.newStep(attrs.KeywordThen, text, fn))
+	b.when.thens = append(b.when.thens, b.s.newStep(&step{keyword: attrs.KeywordThen, text: text, fn: fn}))
 	return b
 }
 
-func (s *Scenario) newStep(keyword, text string, fn func(*testing.T)) *step {
+func (s *Scenario) newStep(st *step) *step {
 	if s.sealed {
-		panic(fmt.Sprintf("signet: %s step %q registered after the scenario body returned", keyword, text))
+		panic(fmt.Sprintf("signet: %s step %q registered after the scenario body returned", st.keyword, st.text))
 	}
-	if strings.TrimSpace(text) == "" || fn == nil {
-		s.t.Fatalf("signet: %s step needs a text and a function", keyword)
+	if strings.TrimSpace(st.text) == "" || st.fn == nil && st.scoped == nil {
+		s.t.Fatalf("signet: %s step needs a text and a function", st.keyword)
 	}
-	return &step{keyword: keyword, text: text, fn: fn}
+	return st
 }
 
 // runSteps runs the steps in order. After a failure, later Given and When
 // steps are skipped; a Then runs only when its own block's action succeeded.
 // blocked registers every step as skipped.
-func runSteps(t *testing.T, steps []*step, blocked bool) {
+func runSteps(sc *testing.T, steps []*step, blocked bool) {
 	failed := blocked
 	blockOK := !blocked
 	for _, st := range steps {
@@ -286,16 +324,16 @@ func runSteps(t *testing.T, steps []*step, blocked bool) {
 		if st.keyword == attrs.KeywordThen {
 			run = blockOK
 		}
-		ok := t.Run(stepTitle(st), func(t *testing.T) {
+		ok := sc.Run(stepTitle(st), func(t *testing.T) {
 			if st.keyword == attrs.KeywordWhen {
-				runWhen(t, st, run)
+				runWhen(t, sc, st, run)
 				return
 			}
 			stepAttrs(t, st)
 			if !run {
 				t.SkipNow()
 			}
-			st.fn(t)
+			st.run(t, sc)
 		})
 		if run && !ok {
 			failed = true
@@ -309,7 +347,7 @@ func runSteps(t *testing.T, steps []*step, blocked bool) {
 // runWhen runs the action and then its Then checks. The checks are started
 // from a deferred call so that they are registered, as skipped, even when the
 // action stops the subtest with FailNow or SkipNow.
-func runWhen(t *testing.T, st *step, run bool) {
+func runWhen(t, sc *testing.T, st *step, run bool) {
 	stepAttrs(t, st)
 	returned := false
 	defer func() {
@@ -327,7 +365,7 @@ func runWhen(t *testing.T, st *step, run bool) {
 	if !run {
 		t.SkipNow()
 	}
-	st.fn(t)
+	st.run(t, sc)
 	returned = true
 }
 

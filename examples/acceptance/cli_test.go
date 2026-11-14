@@ -27,7 +27,7 @@ func TestCommandLine(t *testing.T) {
 
 			f.Scenario("unknown-command", "an unknown command is a usage error", func(s *signet.Scenario) {
 				var res *signet.Result
-				s.When("kv runs an unknown command", func(t *testing.T) {
+				s.When("kv runs an unknown command", func(t testing.TB) {
 					res = kv.Run(t, "frobnicate")
 				}).
 					Then("it exits 2", func(t *testing.T) { res.In(t).Exit(2) }).
@@ -40,10 +40,10 @@ func TestCommandLine(t *testing.T) {
 			f.Scenario("server-unreachable", "a client without a server reports it and exits 3", func(s *signet.Scenario) {
 				var url string
 				var res *signet.Result
-				s.Given("KV_SERVER points at a port nobody listens on", func(t *testing.T) {
+				s.Given("KV_SERVER points at a port nobody listens on", func(t testing.TB) {
 					url = fmt.Sprintf("http://127.0.0.1:%d", signet.FreePort(t))
 				})
-				s.When("the client reads a key", func(t *testing.T) {
+				s.When("the client reads a key", func(t testing.TB) {
 					res = kv.Cmd(t, "get", "anything").Env("KV_SERVER=" + url).Run()
 				}).
 					Then("it exits 3", func(t *testing.T) { res.In(t).Exit(3) }).

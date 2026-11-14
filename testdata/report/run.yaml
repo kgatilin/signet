@@ -6,7 +6,7 @@ features:
       First line.
       Second line.
     status: pass
-    duration: 160ms
+    duration: 140ms
     background:
       - text: a shared file
         scope: feature
@@ -18,7 +18,7 @@ features:
       - id: one
         name: every step kind passes
         status: pass
-        duration: 40ms
+        duration: 60ms
         steps:
           - given: n is one
             status: pass
@@ -36,7 +36,7 @@ features:
       - id: two
         name: the shared background ran once
         status: pass
-        duration: 110ms
+        duration: 40ms
         steps:
           - when: nothing happens
             status: pass
@@ -104,6 +104,15 @@ features:
             then:
               - text: its check
                 status: skip
+      - id: cleanup-fails
+        name: a failed cleanup registered in a Given fails the scenario
+        status: fail
+        error: 'fixture_test.go:125: teardown broke'
+        steps:
+          - given: a resource whose teardown fails
+            status: pass
+          - then: a check that passes
+            status: pass
   - package: github.com/kgatilin/signet/testdata/sdk
     test: TestBackgroundOnceFails
     feature: Broken background
@@ -112,12 +121,12 @@ features:
       - text: a service that does not start
         scope: feature
         status: fail
-        error: 'fixture_test.go:127: service refused to start'
+        error: 'fixture_test.go:134: service refused to start'
     scenarios:
       - id: first
         name: runs the background
         status: fail
-        error: 'background "a service that does not start" failed: fixture_test.go:127: service refused to start'
+        error: 'background "a service that does not start" failed: fixture_test.go:134: service refused to start'
         steps:
           - when: an action
             status: skip
@@ -138,12 +147,12 @@ features:
       - text: a fixture that fails in one scenario
         scope: scenario
         status: fail
-        error: 'fixture_test.go:142: fixture broke'
+        error: 'fixture_test.go:149: fixture broke'
     scenarios:
       - id: bad
         name: its background fails
         status: fail
-        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:142: fixture broke'
+        error: 'background "a fixture that fails in one scenario" failed: fixture_test.go:149: fixture broke'
         steps:
           - when: an action
             status: skip
@@ -154,10 +163,10 @@ features:
           - when: an action
             status: pass
   - package: github.com/kgatilin/signet/testdata/sdk
-    test: TestBackgroundCleanupLogsOnStepFailure
-    feature: Background cleanup logging
+    test: TestFailureOutput
+    feature: Failure output
     status: fail
-    duration: 330ms
+    duration: 770ms
     background:
       - text: a shared service and command
         scope: feature
@@ -169,8 +178,51 @@ features:
       - id: later-step-fails
         name: background fixtures log their commands and service output when a later step fails
         status: fail
-        duration: 330ms
+        duration: 570ms
         steps:
           - when: the step fails
             status: fail
-            error: 'fixture_test.go:167: boom after background'
+            error: 'fixture_test.go:174: boom after background'
+      - id: commands-in-steps
+        name: a failed check logs its own commands, and the scenario logs those of its steps once
+        status: fail
+        duration: 200ms
+        steps:
+          - given: a command in a Given
+            status: pass
+            duration: 40ms
+          - when: a command in a When
+            status: fail
+            duration: 130ms
+            then:
+              - text: a check with a command fails
+                status: fail
+                duration: 50ms
+                error: 'fixture_test.go:185: /bin/sh -c "echo then-cmd-out; exit 3": exit 3, want 0'
+  - package: github.com/kgatilin/signet/testdata/sdk
+    test: TestStepResources
+    feature: Step resources
+    status: pass
+    duration: 130ms
+    scenarios:
+      - id: outlive-step
+        name: what a Given or When creates lives until the scenario ends
+        status: pass
+        duration: 130ms
+        steps:
+          - given: a temporary directory
+            status: pass
+            duration: 10ms
+          - when: a service starts
+            status: pass
+            duration: 100ms
+            then:
+              - text: the directory of the Given still exists
+                status: pass
+          - when: a later action runs
+            status: pass
+            duration: 10ms
+            then:
+              - text: the service of the earlier When is still running
+                status: pass
+                duration: 10ms
