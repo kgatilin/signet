@@ -426,6 +426,14 @@ scenario share one command history, logged on the scenario when it fails
 (`BackgroundOnce` commands are logged on the feature); a `Then` logs its own
 commands.
 
+Services are stopped by `t.Cleanup`. When the test binary panics on `-timeout`
+or is interrupted with Ctrl-C, it exits without running cleanups, and the
+services, each in its own process group, keep running; so does a command
+that was running at that moment. Stop them by hand (`pkill -f <binary>`). To
+stay clear of the `-timeout` case, keep every wait shorter than the test
+deadline (`Timeout` on commands, `ReadyTimeout` on services, the deadline of
+polling loops), so a step fails and its cleanups run before the deadline.
+
 `go test` caches results and does not track the external binary, so run
 acceptance packages with `-count=1`. Go's per-package processes each build the
 subject once; for many packages, build once and set `SIGNET_BINARY`:

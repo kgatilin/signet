@@ -409,6 +409,12 @@ in `internal/proc`.
   `signet report`.
 - `kind: write` and the interactive confirmation prompt have no equivalent
   under `go test`.
+- Services are not stopped when the test process dies. After a `-timeout`
+  panic or Ctrl-C the process exits without running `Cleanup` functions, and
+  services, each in its own process group, stay alive, as does a command
+  that was running. The user stops them with `pkill -f <binary>`, or keeps
+  command and readiness timeouts shorter than the test deadline so that a
+  step fails, and cleanups run, before `-timeout` is reached.
 
 ## Open decisions
 
